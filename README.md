@@ -51,9 +51,18 @@ The bot only responds in the guild configured via `DISCORD_GUILD_ID` and never i
 
 If no system prompt has ever been set, the bot runs without one.
 
+## Text commands (`$` prefix)
+
+Every command also works as a plain text message prefixed with `$`, e.g. `$systemprompt set <text>`
+or `$ping` — useful when slash commands aren't convenient. Text-command replies are always
+posted as normal, visible channel messages (Discord doesn't support hiding replies to plain
+messages the way it does for slash command responses).
+
 ## Adding commands
 
-Add a new file under `src/commands/`, export a `Command` (see `src/commands/ping.ts` for an example), and register it in `src/commands/index.ts`. Re-run `npm run deploy-commands` after adding or changing commands.
+Add a new file under `src/commands/`, export a `Command` (see `src/commands/ping.ts` for an
+example) implementing both `execute` (slash) and `runText` (`$prefix`), and register it in
+`src/commands/index.ts`. Re-run `npm run deploy-commands` after adding or changing commands.
 
 ## Testing
 

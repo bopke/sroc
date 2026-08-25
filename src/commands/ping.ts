@@ -8,4 +8,9 @@ export const ping: Command = {
     const latency = sent.resource!.message!.createdTimestamp - interaction.createdTimestamp;
     await interaction.editReply(`Pong! Latency: ${latency}ms`);
   },
+  async runText(message) {
+    const sent = await message.reply("Pinging...");
+    const latency = sent.createdTimestamp - message.createdTimestamp;
+    await sent.edit(`Pong! Latency: ${latency}ms`);
+  },
 };

@@ -19,6 +19,7 @@ for (const command of commands) {
   commandsByName.set(command.data.name, command);
 }
 
+const COMMAND_PREFIX = "$";
 const DISCORD_MESSAGE_LIMIT = 2000;
 
 function splitMessage(content: string, limit = DISCORD_MESSAGE_LIMIT): string[] {
@@ -67,6 +68,20 @@ client.on(Events.MessageCreate, async (message) => {
   if (!message.guild || message.guild.id !== config.guildId) return;
   if (!message.channel.isSendable()) return;
   if (!client.user) return;
+
+  if (message.content.startsWith(COMMAND_PREFIX)) {
+    const [token, ...args] = message.content.slice(COMMAND_PREFIX.length).trim().split(/\s+/);
+    const command = token ? commandsByName.get(token.toLowerCase()) : undefined;
+    if (command) {
+      try {
+        await command.runText(message, args);
+      } catch (error) {
+        console.error(`Error running text command ${token}:`, error);
+        await message.reply("There was an error executing this command.").catch(() => undefined);
+      }
+      return;
+    }
+  }
 
   const repliedToId = message.reference?.messageId;
   let parentMessageId: string | null;

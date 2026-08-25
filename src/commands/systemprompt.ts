@@ -10,6 +10,42 @@ function truncate(text: string, length: number): string {
   return text.length > length ? `${text.slice(0, length)}…` : text;
 }
 
+function formatView(): string {
+  const current = getCurrentSystemPrompt(db);
+  return current ? current.content : "No system prompt is currently set.";
+}
+
+function formatSet(text: string, userId: string, userTag: string): string {
+  const previous = getCurrentSystemPrompt(db);
+  insertSystemPrompt(db, text, userId, userTag);
+  return (
+    `**System prompt updated by ${userTag}**\n` +
+    `Previous: ${previous ? truncate(previous.content, PREVIEW_LENGTH) : "*none*"}\n` +
+    `New: ${truncate(text, PREVIEW_LENGTH)}\n` +
+    `-# This only affects conversations started from now on.`
+  );
+}
+
+function formatHistory(count: number): string {
+  const entries = listSystemPrompts(db, count);
+  if (entries.length === 0) return "No system prompt changes recorded yet.";
+
+  return entries
+    .map((entry) => {
+      const date = new Date(entry.created_at).toISOString();
+      return `**${date}** by ${entry.changed_by_tag}\n${truncate(entry.content, PREVIEW_LENGTH)}`;
+    })
+    .join("\n\n");
+}
+
+function clampHistoryCount(raw: string | undefined): number {
+  const parsed = raw ? Number.parseInt(raw, 10) : DEFAULT_HISTORY_COUNT;
+  if (!Number.isFinite(parsed)) return DEFAULT_HISTORY_COUNT;
+  return Math.min(Math.max(parsed, 1), MAX_HISTORY);
+}
+
+const TEXT_USAGE = "Usage: `$systemprompt <view|set <text>|history [count]>`";
+
 export const systemprompt: Command = {
   data: new SlashCommandBuilder()
     .setName("systemprompt")
@@ -39,43 +75,44 @@ export const systemprompt: Command = {
     const subcommand = interaction.options.getSubcommand();
 
     if (subcommand === "view") {
-      const current = getCurrentSystemPrompt(db);
-      await interaction.reply({
-        content: current ? current.content : "No system prompt is currently set.",
-        ephemeral: true,
-      });
+      await interaction.reply({ content: formatView(), ephemeral: true });
       return;
     }
 
     if (subcommand === "set") {
       const text = interaction.options.getString("text", true);
-      const previous = getCurrentSystemPrompt(db);
-      insertSystemPrompt(db, text, interaction.user.id, interaction.user.tag);
-
-      await interaction.reply(
-        `**System prompt updated by ${interaction.user.tag}**\n` +
-          `Previous: ${previous ? truncate(previous.content, PREVIEW_LENGTH) : "*none*"}\n` +
-          `New: ${truncate(text, PREVIEW_LENGTH)}\n` +
-          `-# This only affects conversations started from now on.`,
-      );
+      await interaction.reply(formatSet(text, interaction.user.id, interaction.user.tag));
       return;
     }
 
     if (subcommand === "history") {
       const count = interaction.options.getInteger("count") ?? DEFAULT_HISTORY_COUNT;
-      const entries = listSystemPrompts(db, count);
+      await interaction.reply({ content: formatHistory(count), ephemeral: true });
+    }
+  },
+  async runText(message, args) {
+    const [subcommand, ...rest] = args;
 
-      if (entries.length === 0) {
-        await interaction.reply({ content: "No system prompt changes recorded yet.", ephemeral: true });
+    if (subcommand === "view") {
+      await message.reply(formatView());
+      return;
+    }
+
+    if (subcommand === "set") {
+      const text = rest.join(" ").trim();
+      if (!text) {
+        await message.reply("Usage: `$systemprompt set <text>`");
         return;
       }
-
-      const lines = entries.map((entry) => {
-        const date = new Date(entry.created_at).toISOString();
-        return `**${date}** by ${entry.changed_by_tag}\n${truncate(entry.content, PREVIEW_LENGTH)}`;
-      });
-
-      await interaction.reply({ content: lines.join("\n\n"), ephemeral: true });
+      await message.reply(formatSet(text, message.author.id, message.author.tag));
+      return;
     }
+
+    if (subcommand === "history") {
+      await message.reply(formatHistory(clampHistoryCount(rest[0])));
+      return;
+    }
+
+    await message.reply(TEXT_USAGE);
   },
 };
