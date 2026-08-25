@@ -3,8 +3,9 @@ import { config } from "./config.js";
 import { commands } from "./commands/index.js";
 import type { Command } from "./types.js";
 import { db, getCurrentSystemPrompt, insertMessage } from "./db.js";
-import { chat, summarize } from "./grok.js";
+import { chat, summarize, type ChatMessage } from "./grok.js";
 import { isTrackedAssistantMessage, prepareReplyContext, stripBotMention } from "./conversation.js";
+import { formatIncomingContent } from "./discordContext.js";
 
 const client = new Client({
   intents: [
@@ -35,6 +36,13 @@ function splitMessage(content: string, limit = DISCORD_MESSAGE_LIMIT): string[] 
   }
   if (remaining.length > 0) chunks.push(remaining);
   return chunks;
+}
+
+function channelContextMessage(channelName: string | undefined): ChatMessage {
+  return {
+    role: "system",
+    content: `You are replying in the #${channelName ?? "unknown"} channel.`,
+  };
 }
 
 client.once(Events.ClientReady, (readyClient) => {
@@ -94,15 +102,27 @@ client.on(Events.MessageCreate, async (message) => {
     return;
   }
 
-  const content = stripBotMention(message.content, client.user.id);
-  if (!content) return;
+  const strippedText = stripBotMention(message.content, client.user.id);
+  if (!strippedText && message.attachments.size === 0 && message.embeds.length === 0) return;
+
+  const content = formatIncomingContent(
+    {
+      author: message.author,
+      member: message.member,
+      attachments: message.attachments.values(),
+      embeds: message.embeds,
+    },
+    strippedText,
+  );
 
   try {
     const context = await prepareReplyContext(db, parentMessageId, summarize);
+    const channelName = message.guild.channels.cache.get(message.channelId)?.name;
 
     await message.channel.sendTyping().catch(() => undefined);
 
     const replyText = await chat(context.systemPrompt, [
+      channelContextMessage(channelName),
       ...context.contextMessages,
       { role: "user", content },
     ]);
