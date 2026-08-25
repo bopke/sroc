@@ -11,5 +11,7 @@ function requireEnv(name: string): string {
 export const config = {
   token: requireEnv("DISCORD_TOKEN"),
   clientId: requireEnv("DISCORD_CLIENT_ID"),
-  guildId: process.env.DISCORD_GUILD_ID,
+  guildId: requireEnv("DISCORD_GUILD_ID"),
+  grokApiKey: requireEnv("GROK_API_KEY"),
+  grokModel: process.env.GROK_MODEL ?? "grok-3",
 };

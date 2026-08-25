@@ -7,11 +7,9 @@ const body = commands.map((command) => command.data.toJSON());
 const rest = new REST().setToken(config.token);
 
 async function main() {
-  const route = config.guildId
-    ? Routes.applicationGuildCommands(config.clientId, config.guildId)
-    : Routes.applicationCommands(config.clientId);
+  const route = Routes.applicationGuildCommands(config.clientId, config.guildId);
 
-  console.log(`Deploying ${body.length} command(s)${config.guildId ? " to guild" : " globally"}...`);
+  console.log(`Deploying ${body.length} command(s) to guild ${config.guildId}...`);
   await rest.put(route, { body });
   console.log("Successfully deployed commands.");
 }

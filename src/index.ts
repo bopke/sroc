@@ -2,12 +2,38 @@ import { Client, Collection, Events, GatewayIntentBits } from "discord.js";
 import { config } from "./config.js";
 import { commands } from "./commands/index.js";
 import type { Command } from "./types.js";
+import { db, getCurrentSystemPrompt, insertMessage } from "./db.js";
+import { chat, summarize } from "./grok.js";
+import { isTrackedAssistantMessage, prepareReplyContext, stripBotMention } from "./conversation.js";
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
+});
 
 const commandsByName = new Collection<string, Command>();
 for (const command of commands) {
   commandsByName.set(command.data.name, command);
+}
+
+const DISCORD_MESSAGE_LIMIT = 2000;
+
+function splitMessage(content: string, limit = DISCORD_MESSAGE_LIMIT): string[] {
+  if (content.length <= limit) return [content];
+
+  const chunks: string[] = [];
+  let remaining = content;
+  while (remaining.length > limit) {
+    let splitAt = remaining.lastIndexOf("\n", limit);
+    if (splitAt <= 0) splitAt = limit;
+    chunks.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt).replace(/^\n/, "");
+  }
+  if (remaining.length > 0) chunks.push(remaining);
+  return chunks;
 }
 
 client.once(Events.ClientReady, (readyClient) => {
@@ -33,6 +59,78 @@ client.on(Events.InteractionCreate, async (interaction) => {
     } else {
       await interaction.reply(reply);
     }
+  }
+});
+
+client.on(Events.MessageCreate, async (message) => {
+  if (message.author.bot) return;
+  if (!message.guild || message.guild.id !== config.guildId) return;
+  if (!message.channel.isSendable()) return;
+  if (!client.user) return;
+
+  const repliedToId = message.reference?.messageId;
+  let parentMessageId: string | null;
+
+  if (repliedToId && isTrackedAssistantMessage(db, repliedToId)) {
+    parentMessageId = repliedToId;
+  } else if (message.mentions.has(client.user)) {
+    parentMessageId = null;
+  } else {
+    return;
+  }
+
+  const content = stripBotMention(message.content, client.user.id);
+  if (!content) return;
+
+  try {
+    const context = await prepareReplyContext(db, parentMessageId, summarize);
+
+    await message.channel.sendTyping().catch(() => undefined);
+
+    const replyText = await chat(context.systemPrompt, [
+      ...context.contextMessages,
+      { role: "user", content },
+    ]);
+
+    insertMessage(db, {
+      message_id: message.id,
+      parent_message_id: parentMessageId,
+      channel_id: message.channelId,
+      author_id: message.author.id,
+      role: "user",
+      content,
+      summary: null,
+      system_prompt_id:
+        parentMessageId === null ? (getCurrentSystemPrompt(db)?.id ?? null) : null,
+    });
+
+    const chunks = splitMessage(replyText);
+    let lastSentId: string | undefined;
+    for (let i = 0; i < chunks.length; i++) {
+      if (i === chunks.length - 1) {
+        const sent = await message.reply(chunks[i]);
+        lastSentId = sent.id;
+      } else {
+        const sent = await message.channel.send(chunks[i]);
+        lastSentId = sent.id;
+      }
+    }
+
+    insertMessage(db, {
+      message_id: lastSentId!,
+      parent_message_id: message.id,
+      channel_id: message.channelId,
+      author_id: client.user.id,
+      role: "assistant",
+      content: replyText,
+      summary: null,
+      system_prompt_id: null,
+    });
+  } catch (error) {
+    console.error("Failed to handle chat message:", error);
+    await message
+      .reply("Sorry, I couldn't get a response from Grok just now. Please try again.")
+      .catch(() => undefined);
   }
 });
 
