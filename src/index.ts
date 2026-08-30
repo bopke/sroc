@@ -420,13 +420,12 @@ async function handleGoldReaction(reaction: MessageReaction | PartialMessageReac
       return;
     }
 
-    const link = `https://discord.com/channels/${message.guildId || "@me"}/${message.channelId}/${message.id}`;
-    const content = message.content
-      ? `${message.content}\n\n**Źródło:** ${link} (3x :${emojiName}:)`
-      : `**Wiadomość z 3x gold** ${link}`;
-
+    // 1:1 copy of the original message (content + embeds + attachments + stickers etc.)
     const posted = await valutChannel.send({
-      content,
+      content: message.content || undefined,
+      embeds: message.embeds,
+      files: message.attachments.map((a) => a.url),
+      stickers: message.stickers,
       allowedMentions: { parse: [] },
     });
 
