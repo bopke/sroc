@@ -2,7 +2,7 @@ import { Client, Collection, Events, GatewayIntentBits, Partials, type Message }
 import { config } from "./config.js";
 import { commands } from "./commands/index.js";
 import type { Command } from "./types.js";
-import { db, getCurrentSystemPrompt, insertMessage, promptScope } from "./db.js";
+import { db, getCurrentSystemPrompt, getWorkspaceId, insertMessage, promptScope } from "./db.js";
 import { GrokBuildClient, type GrokStreamEvent } from "./grok.js";
 import {
   buildSessionRules,
@@ -27,9 +27,19 @@ const grok = new GrokBuildClient({
   model: config.grokModel,
   cwd: config.grokCwd,
   apiKey: config.grokApiKey,
+  githubToken: config.githubToken,
   alwaysApprove: config.grokAlwaysApprove,
   sandbox: config.grokSandbox,
   timeoutMs: config.grokTimeoutMs,
+  isolate: config.grokIsolate,
+  isolateSettings: {
+    image: config.grokIsolateImage,
+    repoUrl: config.grokRepoUrl,
+    githubToken: config.githubToken,
+    memory: config.grokIsolateMemory,
+    cpus: config.grokIsolateCpus,
+    pidsLimit: 256,
+  },
 });
 
 const commandsByName = new Collection<string, Command>();
@@ -153,6 +163,7 @@ client.on(Events.MessageCreate, async (message) => {
   if (!target) return;
 
   const { parentMessageId, resumeSessionId } = target;
+  const workspaceId = getWorkspaceId(db, parentMessageId) ?? message.id;
 
   const strippedText = stripBotMention(message.content, client.user.id);
   if (!strippedText && message.attachments.size === 0 && message.embeds.length === 0) return;
@@ -198,6 +209,7 @@ client.on(Events.MessageCreate, async (message) => {
       resumeSessionId,
       fork: Boolean(resumeSessionId),
       rules,
+      workspaceId,
       onEvent,
     });
 
@@ -212,6 +224,7 @@ client.on(Events.MessageCreate, async (message) => {
       system_prompt_id:
         parentMessageId === null ? (getCurrentSystemPrompt(db, scope)?.id ?? null) : null,
       grok_session_id: null,
+      workspace_id: workspaceId,
     });
 
     const lastSentId = await deliverReply(status, result.text);
@@ -226,6 +239,7 @@ client.on(Events.MessageCreate, async (message) => {
       summary: null,
       system_prompt_id: null,
       grok_session_id: result.sessionId,
+      workspace_id: workspaceId,
     });
   } catch (error) {
     console.error("Failed to handle chat message:", error);

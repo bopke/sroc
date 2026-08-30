@@ -35,15 +35,17 @@ local credentials. Required: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`,
 `DISCORD_GUILD_ID`, `OWNER_ID`, and `XAI_API_KEY` (or `GROK_API_KEY`). Optional: `GROK_MODEL`
 (default `grok-build`; `default` omits `-m` so the CLI uses its configured
 model), `GROK_BIN`, `GROK_CWD` (default `./workspace`),
-`GROK_ALWAYS_APPROVE` (default true), `GROK_SANDBOX` (default `workspace`),
-`GROK_TIMEOUT_MS` (default 600000).
+`GROK_ALWAYS_APPROVE` (default true), `GROK_SANDBOX` (default `workspace`; ignored
+when isolate is on), `GROK_TIMEOUT_MS` (default 600000), `GROK_ISOLATE` (default
+true), `GROK_REPO_URL`, `GITHUB_TOKEN`, `GROK_ISOLATE_IMAGE`.
 
 `src/config.ts` throws on import if required env is missing. Tests must not
 import `config.ts` or `index.ts`. `src/grok.ts` is safe to import in tests: it
 does not load config.
 
-The `grok` CLI must be on `PATH` (or set `GROK_BIN`) at runtime. Unit tests do
-not spawn it.
+The `grok` CLI must be on `PATH` (or set `GROK_BIN`) at runtime when
+`GROK_ISOLATE=false`. Isolated mode (default) docker-execs `grok` inside
+`sroc-agent:latest`. Unit tests do not spawn grok or docker.
 
 ## Version control
 
@@ -59,6 +61,8 @@ commit `.env`, `data/`, `workspace/`, or `dist/`.
 | `src/config.ts`          | Env loading                                                                   |
 | `src/db.ts`              | SQLite schema + queries. Default export opens `data/bot.db` at import         |
 | `src/grok.ts`            | Grok Build CLI wrapper (`GrokBuildClient`, arg builder, stream parser)        |
+| `src/isolate.ts`         | Per-conversation Docker workspace (create, exec, prune)                       |
+| `Dockerfile.agent`       | Image `sroc-agent:latest` with grok + git + node                              |
 | `src/conversation.ts`    | Mention stripping, assistant-message check, session-id lookup, `--rules` text |
 | `src/discordContext.ts`  | Format incoming Discord messages as plain text for Grok                       |
 | `src/commands/`          | One file per command; register in `src/commands/index.ts`                     |
@@ -109,9 +113,18 @@ in `sroc.service` as well.
 - **Long replies:** split on the nearest preceding newline at 2000 chars. The `-# Working...` reply is edited into the first chunk; later chunks are untracked channel messages. The last sent message id is the `assistant` row (the one a user must reply to in order to continue).
 - **Stored user content** is `formatIncomingContent(...)` output (`Speaker (@username): body`), with the bot mention stripped. Attachments/embeds are text notes (name/url/title), not file bytes.
 - **Legacy rows** with a null `grok_session_id` start a fresh Grok session (still parented in the Discord tree).
+- **Isolate by default.** Each conversation root gets a Docker container
+  (`sroc-ws-<workspace_id>`, label `sroc.workspace=1`) with a clone of
+  `GROK_REPO_URL`. Do not mount the host checkout, `.env`, or `data/`. Do not
+  pass `DISCORD_TOKEN` into the container. Inner grok sandbox is `off`; Docker
+  is the isolation. Copy `workspace_id` from the parent message; new roots use
+  the incoming Discord message id. `/isolate prune` (owner) is the removal path.
 
 ## Grok Build
 
-`src/grok.ts` spawns `grok -p` with `--output-format streaming-json --verbatim`. Pass `XAI_API_KEY` and `GROK_DISABLE_AUTOUPDATER=1` in the child env. Keep `GrokBuildClient.prompt` as the only runtime entry point.
+`src/grok.ts` spawns `grok -p` (or `docker exec … grok -p` when isolated) with
+`--output-format streaming-json --verbatim`. Pass `XAI_API_KEY` and
+`GROK_DISABLE_AUTOUPDATER=1` into the grok process, not the whole host env into
+the container. Keep `GrokBuildClient.prompt` as the only runtime entry point.
 
 Do not add the `openai` package back, and do not use `--system-prompt-override`.

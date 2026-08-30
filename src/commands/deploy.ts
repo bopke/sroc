@@ -64,6 +64,14 @@ export async function pullAndBuild(): Promise<string> {
   ];
 
   try {
+    const image = await run("npm", ["run", "build-image"], cwd);
+    lines.push("", "**build-image**", clipLog(image) || "ok");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    lines.push("", "**build-image** (failed, restarting anyway)", clipLog(message));
+  }
+
+  try {
     const deployCmds = await run("npm", ["run", "deploy-commands"], cwd);
     lines.push("", "**deploy-commands**", clipLog(deployCmds) || "ok");
   } catch (error) {

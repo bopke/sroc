@@ -60,9 +60,13 @@ A Discord bot written in TypeScript using [discord.js](https://discord.js.org/),
 The bot only responds in the guild configured via `DISCORD_GUILD_ID`, and in
 DMs with `OWNER_ID`. Other DMs are ignored.
 
-`GROK_ALWAYS_APPROVE=true` means the agent can run tools (read/edit/run) without
-asking. The default `GROK_SANDBOX=workspace` still limits writes to the working
-directory. Point `GROK_CWD` at the repo you want it to work in.
+Each conversation runs Grok inside a **Docker container** (`sroc-ws-<id>`)
+cloned from `GROK_REPO_URL` (default this GitHub repo). The live bot checkout,
+`.env`, and SQLite DB are not mounted. Throw a conversation away with
+`/isolate prune` (owner only). Build the image once: `npm run build-image`.
+
+`GITHUB_TOKEN` (optional) lets the container clone a private repo and open PRs.
+Do not pass `DISCORD_TOKEN` into containers.
 
 ## Chatting with the bot
 
@@ -76,14 +80,16 @@ directory. Point `GROK_CWD` at the repo you want it to work in.
   separate.
 - Discord message ids and Grok session ids are stored in `data/bot.db`
   (SQLite, gitignored). Conversation history itself lives in Grok Build sessions.
-- Ask it to inspect or change code in `GROK_CWD` — it has the same tools as
-  headless `grok -p`. Long runs post a `-# Working...` status (including the current
-  tool) until the reply is ready.
+- Ask it to inspect or change code — that happens in the conversation's
+  container, not on the host. Long runs post a `-# Working...` status
+  (including the current tool) until the reply is ready.
 
 ## Deploy
 
 - `/deploy` — `git pull --ff-only`, `npm run build`, register slash commands,
   then exit so systemd (`Restart=always`) starts the new `dist/`. Also `$deploy`.
+- `/isolate status` / `/isolate prune` — list or destroy conversation containers
+  (owner only).
 
 ## System prompt
 

@@ -49,4 +49,10 @@ export const config = {
   grokAlwaysApprove: boolEnv("GROK_ALWAYS_APPROVE", true),
   grokSandbox: optionalEnv("GROK_SANDBOX") ?? "workspace",
   grokTimeoutMs: Number.parseInt(process.env.GROK_TIMEOUT_MS ?? "600000", 10) || 600000,
+  grokIsolate: boolEnv("GROK_ISOLATE", true),
+  grokIsolateImage: process.env.GROK_ISOLATE_IMAGE ?? "sroc-agent:latest",
+  grokRepoUrl: process.env.GROK_REPO_URL ?? "https://github.com/bopke/sroc.git",
+  githubToken: optionalEnv("GITHUB_TOKEN") ?? optionalEnv("GH_TOKEN"),
+  grokIsolateMemory: process.env.GROK_ISOLATE_MEMORY ?? "1g",
+  grokIsolateCpus: process.env.GROK_ISOLATE_CPUS ?? "1",
 };

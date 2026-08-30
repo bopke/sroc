@@ -25,6 +25,7 @@ function addMessage(
   extras: {
     systemPromptId?: number | null;
     grokSessionId?: string | null;
+    workspaceId?: string | null;
     channelId?: string;
   } = {},
 ): string {
@@ -39,6 +40,7 @@ function addMessage(
     summary: null,
     system_prompt_id: extras.systemPromptId ?? null,
     grok_session_id: extras.grokSessionId ?? null,
+    workspace_id: extras.workspaceId ?? null,
   });
   return id;
 }

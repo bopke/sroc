@@ -10,6 +10,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "deploy-commands": "tsx src/deploy-commands.ts",
+    "build-image": "docker build -t sroc-agent:latest -f Dockerfile.agent .",
     "test": "node --import tsx --test 'src/**/*.test.ts'",
     "lint": "eslint .",
     "format": "prettier --write ."

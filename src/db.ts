@@ -28,12 +28,14 @@ export function openDatabase(path: string): DB {
       summary TEXT,
       system_prompt_id INTEGER REFERENCES system_prompts(id),
       grok_session_id TEXT,
+      workspace_id TEXT,
       created_at INTEGER NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_message_id);
   `);
   ensureColumn(db, "messages", "grok_session_id", "TEXT");
+  ensureColumn(db, "messages", "workspace_id", "TEXT");
   ensureColumn(db, "system_prompts", "scope", "TEXT NOT NULL DEFAULT 'guild'");
   return db;
 }
@@ -81,6 +83,7 @@ export interface MessageRow {
   summary: string | null;
   system_prompt_id: number | null;
   grok_session_id: string | null;
+  workspace_id: string | null;
   created_at: number;
 }
 
@@ -131,6 +134,11 @@ export function getLatestAssistantInChannel(db: DB, channelId: string): MessageR
     .get(channelId) as MessageRow | undefined;
 }
 
+export function getWorkspaceId(db: DB, messageId: string | null): string | null {
+  if (!messageId) return null;
+  return getMessage(db, messageId)?.workspace_id ?? null;
+}
+
 export function getMessage(db: DB, messageId: string): MessageRow | undefined {
   return db.prepare("SELECT * FROM messages WHERE message_id = ?").get(messageId) as
     MessageRow | undefined;
@@ -140,8 +148,8 @@ export function insertMessage(db: DB, row: Omit<MessageRow, "created_at">): Mess
   const createdAt = Date.now();
   db.prepare(
     `INSERT INTO messages
-      (message_id, parent_message_id, channel_id, author_id, role, content, summary, system_prompt_id, grok_session_id, created_at)
-     VALUES (@message_id, @parent_message_id, @channel_id, @author_id, @role, @content, @summary, @system_prompt_id, @grok_session_id, @created_at)`,
+      (message_id, parent_message_id, channel_id, author_id, role, content, summary, system_prompt_id, grok_session_id, workspace_id, created_at)
+     VALUES (@message_id, @parent_message_id, @channel_id, @author_id, @role, @content, @summary, @system_prompt_id, @grok_session_id, @workspace_id, @created_at)`,
   ).run({ ...row, created_at: createdAt });
   return { ...row, created_at: createdAt };
 }

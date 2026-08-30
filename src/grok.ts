@@ -1,14 +1,24 @@
 import { spawn } from "node:child_process";
 import type { Readable } from "node:stream";
+import {
+  dockerExecGrokArgs,
+  ensureWorkspace,
+  INNER_CWD,
+  workspaceContainerName,
+  type IsolateSettings,
+} from "./isolate.js";
 
 export interface GrokBuildSettings {
   bin: string;
   model: string;
   cwd: string;
   apiKey: string;
+  githubToken?: string;
   alwaysApprove: boolean;
   sandbox: string;
   timeoutMs: number;
+  isolate: boolean;
+  isolateSettings: IsolateSettings;
 }
 
 export interface GrokResult {
@@ -168,6 +178,7 @@ export interface RunGrokInput {
   resumeSessionId?: string | null;
   fork?: boolean;
   rules?: string | null;
+  workspaceId?: string | null;
   onEvent?: (event: GrokStreamEvent) => void;
 }
 
@@ -175,28 +186,44 @@ export class GrokBuildClient {
   constructor(private readonly settings: GrokBuildSettings) {}
 
   async prompt(input: RunGrokInput): Promise<GrokResult> {
+    const isolated = this.settings.isolate;
+    if (isolated && !input.workspaceId) {
+      throw new Error("Isolated Grok runs require a workspace id");
+    }
+
+    if (isolated && input.workspaceId) {
+      await ensureWorkspace(input.workspaceId, this.settings.isolateSettings);
+    }
+
     const args = buildGrokArgs({
       prompt: input.prompt,
       model: this.settings.model,
-      cwd: this.settings.cwd,
+      cwd: isolated ? INNER_CWD : this.settings.cwd,
       resumeSessionId: input.resumeSessionId ?? undefined,
       fork: input.fork,
       rules: input.rules,
       alwaysApprove: this.settings.alwaysApprove,
-      sandbox: this.settings.sandbox,
+      sandbox: isolated ? "off" : this.settings.sandbox,
     });
 
     const env = {
       ...process.env,
       XAI_API_KEY: this.settings.apiKey,
+      GH_TOKEN: this.settings.githubToken ?? "",
+      GITHUB_TOKEN: this.settings.githubToken ?? "",
       GROK_DISABLE_AUTOUPDATER: "1",
     };
 
-    const child = spawn(this.settings.bin, args, {
-      cwd: this.settings.cwd,
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const child = isolated
+      ? spawn("docker", dockerExecGrokArgs(workspaceContainerName(input.workspaceId!), args), {
+          env,
+          stdio: ["ignore", "pipe", "pipe"],
+        })
+      : spawn(this.settings.bin, args, {
+          cwd: this.settings.cwd,
+          env,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
 
     const collected = emptyCollection();
     const stderrChunks: Buffer[] = [];
@@ -218,12 +245,21 @@ export class GrokBuildClient {
       exitCode = await new Promise<number | null>((resolve, reject) => {
         const timer = setTimeout(() => {
           child.kill("SIGTERM");
+          if (isolated && input.workspaceId) {
+            spawn(
+              "docker",
+              ["exec", workspaceContainerName(input.workspaceId), "pkill", "-TERM", "grok"],
+              {
+                stdio: "ignore",
+              },
+            );
+          }
           reject(new Error(`Grok timed out after ${this.settings.timeoutMs}ms`));
         }, this.settings.timeoutMs);
 
         child.on("error", (error) => {
           clearTimeout(timer);
-          reject(wrapSpawnError(error, this.settings.bin));
+          reject(wrapSpawnError(error, isolated ? "docker" : this.settings.bin));
         });
         child.on("close", (code) => {
           clearTimeout(timer);
@@ -257,6 +293,9 @@ export class GrokBuildClient {
 
 function wrapSpawnError(error: unknown, bin: string): Error {
   if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+    if (bin === "docker") {
+      return new Error("Docker not found. Install docker and build the sroc-agent image.");
+    }
     return new Error(
       `Grok CLI not found (${bin}). Install it from https://x.ai/cli/install.sh or set GROK_BIN.`,
     );
