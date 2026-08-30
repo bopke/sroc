@@ -1,5 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
+import { githubInsteadOfCommands } from "./secret-proxy.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -11,7 +12,6 @@ const INNER_HOME = "/home/node";
 export interface IsolateSettings {
   image: string;
   repoUrl: string;
-  githubToken?: string;
   gitUserName: string;
   gitUserEmail: string;
   memory: string;
@@ -19,6 +19,7 @@ export interface IsolateSettings {
   pidsLimit: number;
   cloneRepo: boolean;
   xaiProxyUrl: string;
+  githubProxyUrl?: string;
 }
 
 export function workspaceContainerName(workspaceId: string): string {
@@ -80,7 +81,7 @@ export function containerGrokConfig(xaiProxyUrl: string): string {
     "[shell_environment_policy]",
     'inherit = "core"',
     "ignore_default_excludes = false",
-    'include_only = ["PATH", "HOME", "USER", "LANG", "LC_ALL", "TERM", "TMPDIR", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"]',
+    'include_only = ["PATH", "HOME", "USER", "LANG", "LC_ALL", "TERM", "TMPDIR", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "SROC_GH_PROXY"]',
     "",
   ].join("\n");
 }
@@ -89,8 +90,9 @@ export function dockerExecGrokArgs(
   containerName: string,
   grokArgs: string[],
   xaiProxyUrl: string,
+  githubProxyUrl?: string,
 ): string[] {
-  return [
+  const args = [
     "exec",
     "-e",
     `XAI_API_KEY=${CONTAINER_XAI_PLACEHOLDER}`,
@@ -112,10 +114,12 @@ export function dockerExecGrokArgs(
     "GROK_DISABLE_AUTOUPDATER=1",
     "-e",
     `HOME=${INNER_HOME}`,
-    containerName,
-    "grok",
-    ...grokArgs,
   ];
+  if (githubProxyUrl) {
+    args.push("-e", `SROC_GH_PROXY=${githubProxyUrl.replace(/\/$/, "")}/https/api.github.com`);
+  }
+  args.push(containerName, "grok", ...grokArgs);
+  return args;
 }
 
 export function gitConfigCommands(name: string, email: string): string[][] {
@@ -227,13 +231,10 @@ async function provision(containerName: string, settings: IsolateSettings): Prom
       ["sh", "-c", "mkdir -p /home/node/.grok && cat > /home/node/.grok/config.toml"],
       containerGrokConfig(settings.xaiProxyUrl),
     );
-    if (settings.githubToken) {
-      await execWithStdin(
-        containerName,
-        ["gh", "auth", "login", "--hostname", "github.com", "--with-token"],
-        `${settings.githubToken}\n`,
-      );
-      await execIn(containerName, ["gh", "auth", "setup-git"]);
+    if (settings.githubProxyUrl) {
+      for (const cmd of githubInsteadOfCommands(settings.githubProxyUrl)) {
+        await execIn(containerName, cmd);
+      }
     }
     await execIn(containerName, ["sh", "-c", "touch /home/node/.sroc-provisioned"]);
   }

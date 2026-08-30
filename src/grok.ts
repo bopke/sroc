@@ -243,6 +243,7 @@ export class GrokBuildClient {
             workspaceContainerName(input.workspaceId!),
             args,
             this.settings.isolateSettings.xaiProxyUrl,
+            this.settings.isolateSettings.githubProxyUrl,
           ),
           {
             env: isolatedEnv,
