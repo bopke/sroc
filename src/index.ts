@@ -39,7 +39,11 @@ const grok = new GrokBuildClient({
     memory: config.grokIsolateMemory,
     cpus: config.grokIsolateCpus,
     pidsLimit: 256,
+    cloneRepo: config.grokIsolateClone,
   },
+  noPlan: config.grokNoPlan,
+  noSubagents: config.grokNoSubagents,
+  effort: config.grokEffort,
 });
 
 const commandsByName = new Collection<string, Command>();
@@ -68,6 +72,7 @@ function splitMessage(content: string, limit = DISCORD_MESSAGE_LIMIT): string[] 
 }
 
 function toolStatusText(event: GrokStreamEvent): string | null {
+  if (event.type === "thought") return "-# Working...";
   if (event.type !== "tool_call") return null;
   const label = event.title ?? event.toolName;
   return label ? `-# Working... ${label}` : "-# Working...";
@@ -184,10 +189,13 @@ client.on(Events.MessageCreate, async (message) => {
   const rules = isNewSession
     ? buildSessionRules(getCurrentSystemPrompt(db, scope)?.content ?? null, channelName, {
         dm: isDm,
+        repoUrl: config.grokRepoUrl,
       })
     : null;
 
-  const status = await message.reply("-# Working...");
+  const status = await message.reply(
+    config.grokIsolate ? "-# Starting workspace..." : "-# Working...",
+  );
   const typing = setInterval(() => {
     message.channel.sendTyping().catch(() => undefined);
   }, TYPING_INTERVAL_MS);

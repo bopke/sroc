@@ -19,6 +19,9 @@ export interface GrokBuildSettings {
   timeoutMs: number;
   isolate: boolean;
   isolateSettings: IsolateSettings;
+  noPlan: boolean;
+  noSubagents: boolean;
+  effort: string;
 }
 
 export interface GrokResult {
@@ -28,6 +31,7 @@ export interface GrokResult {
 
 export type GrokStreamEvent =
   | { type: "text"; data: string }
+  | { type: "thought"; data: string }
   | { type: "tool_call"; title?: string; toolName?: string }
   | { type: "end"; sessionId: string }
   | { type: "result"; text: string; sessionId: string }
@@ -48,6 +52,9 @@ export interface BuildGrokArgsInput {
   rules?: string | null;
   alwaysApprove: boolean;
   sandbox?: string | null;
+  noPlan?: boolean;
+  noSubagents?: boolean;
+  effort?: string | null;
 }
 
 /** Omit `-m` so Grok Build uses its configured default model. */
@@ -67,6 +74,9 @@ export function buildGrokArgs(opts: BuildGrokArgsInput): string[] {
 
   if (opts.alwaysApprove) args.push("--always-approve");
   if (opts.sandbox && opts.sandbox !== "off") args.push("--sandbox", opts.sandbox);
+  if (opts.noPlan) args.push("--no-plan");
+  if (opts.noSubagents) args.push("--no-subagents");
+  if (opts.effort && opts.effort !== "default") args.push("--effort", opts.effort);
 
   if (opts.resumeSessionId) {
     args.push("--resume", opts.resumeSessionId);
@@ -108,6 +118,8 @@ export function parseStreamLine(line: string): GrokStreamEvent | null {
   switch (obj.type) {
     case "text":
       return { type: "text", data: String(obj.data ?? "") };
+    case "thought":
+      return { type: "thought", data: String(obj.data ?? "") };
     case "tool_call":
       return {
         type: "tool_call",
@@ -204,6 +216,9 @@ export class GrokBuildClient {
       rules: input.rules,
       alwaysApprove: this.settings.alwaysApprove,
       sandbox: isolated ? "off" : this.settings.sandbox,
+      noPlan: this.settings.noPlan,
+      noSubagents: this.settings.noSubagents,
+      effort: this.settings.effort,
     });
 
     const env = {

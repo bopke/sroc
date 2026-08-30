@@ -15,6 +15,7 @@ export interface IsolateSettings {
   memory: string;
   cpus: string;
   pidsLimit: number;
+  cloneRepo: boolean;
 }
 
 export function workspaceContainerName(workspaceId: string): string {
@@ -105,6 +106,8 @@ async function inspectRunning(name: string): Promise<"running" | "stopped" | "mi
 }
 
 async function provision(containerName: string, settings: IsolateSettings): Promise<void> {
+  if (!settings.cloneRepo) return;
+
   const { stdout: hasGit } = await docker([
     "exec",
     containerName,

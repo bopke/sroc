@@ -60,10 +60,13 @@ A Discord bot written in TypeScript using [discord.js](https://discord.js.org/),
 The bot only responds in the guild configured via `DISCORD_GUILD_ID`, and in
 DMs with `OWNER_ID`. Other DMs are ignored.
 
-Each conversation runs Grok inside a **Docker container** (`sroc-ws-<id>`)
-cloned from `GROK_REPO_URL` (default this GitHub repo). The live bot checkout,
-`.env`, and SQLite DB are not mounted. Throw a conversation away with
-`/isolate prune` (owner only). Build the image once: `npm run build-image`.
+Each conversation runs Grok inside a **Docker container** (`sroc-ws-<id>`).
+The workspace starts **empty** so a greeting does not clone the repo or
+explore the codebase. If you ask it to work on files or open a PR, it clones
+`GROK_REPO_URL` itself. The live bot checkout, `.env`, and SQLite DB are not
+mounted. Throw a conversation away with `/isolate prune` (owner only).
+Build the image once: `npm run build-image`. Set `GROK_ISOLATE_CLONE=true`
+only if you want every new conversation to clone up front (slow).
 
 `GITHUB_TOKEN` (optional) lets the container clone a private repo and open PRs.
 Do not pass `DISCORD_TOKEN` into containers.

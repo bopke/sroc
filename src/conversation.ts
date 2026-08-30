@@ -67,16 +67,24 @@ export function resolveChatTarget(
 export function buildSessionRules(
   systemPrompt: string | null,
   channelName: string | undefined,
-  options: { dm?: boolean } = {},
+  options: { dm?: boolean; repoUrl?: string } = {},
 ): string {
   const location = options.dm
     ? "You are chatting in a Discord DM with the bot owner."
     : `You are a Discord bot replying in the #${channelName ?? "unknown"} channel.`;
   const parts = [
     location,
-    "You can read, edit, and run code in your workspace when the user asks you to.",
-    "Write Discord-friendly replies: concise unless the task needs detail or a code change.",
+    "Reply to greetings and simple questions immediately. Do not explore the filesystem or run tools unless the user asks you to work on files, commands, or a pull request.",
+    "The workspace starts empty and is isolated from the host.",
   ];
+  if (options.repoUrl) {
+    parts.push(
+      `If the user wants you to work on this project's code or open a PR, clone ${options.repoUrl} into the workspace first.`,
+    );
+  }
+  parts.push(
+    "Write Discord-friendly replies: concise unless the task needs detail or a code change.",
+  );
   if (systemPrompt) parts.push(systemPrompt);
   return parts.join("\n\n");
 }

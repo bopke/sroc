@@ -28,6 +28,13 @@ describe("buildGrokArgs", () => {
     ]);
   });
 
+  it("adds no-plan, no-subagents, and effort when set", () => {
+    const args = buildGrokArgs({ ...base, noPlan: true, noSubagents: true, effort: "low" });
+    assert.ok(args.includes("--no-plan"));
+    assert.ok(args.includes("--no-subagents"));
+    assert.equal(args[args.indexOf("--effort") + 1], "low");
+  });
+
   it("resumes and forks so Discord branches do not mutate the parent session", () => {
     const args = buildGrokArgs({
       ...base,
@@ -88,9 +95,12 @@ describe("parseStreamLine / reduceStdout", () => {
     assert.equal(result.error, "auth failed");
   });
 
-  it("ignores blank lines, thoughts, and invalid json", () => {
+  it("ignores blank lines and invalid json; parses thought events", () => {
     assert.equal(parseStreamLine(""), null);
     assert.equal(parseStreamLine("not json"), null);
-    assert.equal(parseStreamLine(JSON.stringify({ type: "thought", data: "hmm" })), null);
+    assert.deepEqual(parseStreamLine(JSON.stringify({ type: "thought", data: "hmm" })), {
+      type: "thought",
+      data: "hmm",
+    });
   });
 });

@@ -36,6 +36,7 @@ describe("dockerRunArgs", () => {
       memory: "1g",
       cpus: "1",
       pidsLimit: 256,
+      cloneRepo: false,
     });
     assert.ok(args.includes("--cap-drop"));
     assert.ok(args.includes("ALL"));

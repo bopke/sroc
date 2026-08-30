@@ -55,4 +55,8 @@ export const config = {
   githubToken: optionalEnv("GITHUB_TOKEN") ?? optionalEnv("GH_TOKEN"),
   grokIsolateMemory: process.env.GROK_ISOLATE_MEMORY ?? "1g",
   grokIsolateCpus: process.env.GROK_ISOLATE_CPUS ?? "1",
+  grokIsolateClone: boolEnv("GROK_ISOLATE_CLONE", false),
+  grokNoPlan: boolEnv("GROK_NO_PLAN", true),
+  grokNoSubagents: boolEnv("GROK_NO_SUBAGENTS", true),
+  grokEffort: process.env.GROK_EFFORT ?? "low",
 };

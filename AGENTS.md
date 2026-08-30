@@ -114,10 +114,13 @@ in `sroc.service` as well.
 - **Stored user content** is `formatIncomingContent(...)` output (`Speaker (@username): body`), with the bot mention stripped. Attachments/embeds are text notes (name/url/title), not file bytes.
 - **Legacy rows** with a null `grok_session_id` start a fresh Grok session (still parented in the Discord tree).
 - **Isolate by default.** Each conversation root gets a Docker container
-  (`sroc-ws-<workspace_id>`, label `sroc.workspace=1`) with a clone of
-  `GROK_REPO_URL`. Do not mount the host checkout, `.env`, or `data/`. Do not
-  pass `DISCORD_TOKEN` into the container. Inner grok sandbox is `off`; Docker
-  is the isolation. Copy `workspace_id` from the parent message; new roots use
+  (`sroc-ws-<workspace_id>`, label `sroc.workspace=1`). Do **not** clone the
+  repo on provision unless `GROK_ISOLATE_CLONE=true` — an empty workspace keeps
+  simple chat fast. Tell Grok the repo URL in `--rules` so it can clone when
+  the user asks for file/PR work. Do not mount the host checkout, `.env`, or
+  `data/`. Do not pass `DISCORD_TOKEN` into the container. Inner grok sandbox
+  is `off`; Docker is the isolation. Default `--no-plan`, `--no-subagents`,
+  `--effort low`. Copy `workspace_id` from the parent message; new roots use
   the incoming Discord message id. `/isolate prune` (owner) is the removal path.
 
 ## Grok Build
