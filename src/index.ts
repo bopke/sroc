@@ -43,6 +43,8 @@ const grok = new GrokBuildClient({
     image: config.grokIsolateImage,
     repoUrl: config.grokRepoUrl,
     githubToken: config.githubToken,
+    gitUserName: config.gitUserName,
+    gitUserEmail: config.gitUserEmail,
     memory: config.grokIsolateMemory,
     cpus: config.grokIsolateCpus,
     pidsLimit: 256,
@@ -286,6 +288,7 @@ client.on(Events.MessageCreate, async (message) => {
     ? buildSessionRules(getCurrentSystemPrompt(db, scope)?.content ?? null, channelName, {
         dm: isDm,
         repoUrl: config.grokRepoUrl,
+        githubConfigured: Boolean(config.githubToken),
       })
     : null;
 

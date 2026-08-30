@@ -53,6 +53,8 @@ export const config = {
   grokIsolateImage: process.env.GROK_ISOLATE_IMAGE ?? "sroc-agent:latest",
   grokRepoUrl: process.env.GROK_REPO_URL ?? "https://github.com/bopke/sroc.git",
   githubToken: optionalEnv("GITHUB_TOKEN") ?? optionalEnv("GH_TOKEN"),
+  gitUserName: process.env.GIT_USER_NAME ?? "sroc bot",
+  gitUserEmail: process.env.GIT_USER_EMAIL ?? "sroc-bot@users.noreply.github.com",
   grokIsolateMemory: process.env.GROK_ISOLATE_MEMORY ?? "1g",
   grokIsolateCpus: process.env.GROK_ISOLATE_CPUS ?? "1",
   grokIsolateClone: boolEnv("GROK_ISOLATE_CLONE", false),

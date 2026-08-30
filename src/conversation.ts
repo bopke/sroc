@@ -67,7 +67,7 @@ export function resolveChatTarget(
 export function buildSessionRules(
   systemPrompt: string | null,
   channelName: string | undefined,
-  options: { dm?: boolean; repoUrl?: string } = {},
+  options: { dm?: boolean; repoUrl?: string; githubConfigured?: boolean } = {},
 ): string {
   const location = options.dm
     ? "You are chatting in a Discord DM with the bot owner."
@@ -77,9 +77,16 @@ export function buildSessionRules(
     "Reply to greetings and simple questions immediately. Do not explore the filesystem or run tools unless the user asks you to work on files, commands, or a pull request.",
     "The workspace starts empty and is isolated from the host.",
   ];
+  if (options.githubConfigured) {
+    parts.push(
+      "git and GitHub CLI (gh) are authenticated as the bot GitHub account. You can clone repositories the token can access, create a feature branch, commit, push, and open a pull request with `gh pr create`. Never force-push protected branches or print tokens.",
+    );
+  } else {
+    parts.push("No GitHub token is configured; you cannot push or open pull requests.");
+  }
   if (options.repoUrl) {
     parts.push(
-      `If the user wants you to work on this project's code or open a PR, clone ${options.repoUrl} into the workspace first.`,
+      `This bot's own repo is ${options.repoUrl}. If the user asks you to change it or open a PR, clone that URL (or the repo they name) into the workspace first.`,
     );
   }
   parts.push(

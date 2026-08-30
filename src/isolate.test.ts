@@ -4,6 +4,7 @@ import {
   cloneUrlWithToken,
   dockerExecGrokArgs,
   dockerRunArgs,
+  gitConfigCommands,
   workspaceContainerName,
   WORKSPACE_LABEL,
 } from "./isolate.js";
@@ -36,6 +37,8 @@ describe("dockerRunArgs", () => {
       memory: "1g",
       cpus: "1",
       pidsLimit: 256,
+      gitUserName: "sroc bot",
+      gitUserEmail: "sroc-bot@users.noreply.github.com",
       cloneRepo: false,
     });
     assert.ok(args.includes("--cap-drop"));
@@ -53,6 +56,16 @@ describe("dockerExecGrokArgs", () => {
     assert.deepEqual(args.slice(0, 3), ["exec", "-e", "XAI_API_KEY"]);
     assert.ok(args.includes("grok"));
     assert.ok(args.includes("/workspace"));
+    assert.ok(args.includes("GH_TOKEN"));
+    assert.ok(args.includes("GIT_AUTHOR_NAME"));
     assert.ok(!args.includes("DISCORD_TOKEN"));
+  });
+});
+
+describe("gitConfigCommands", () => {
+  it("sets global user identity", () => {
+    const cmds = gitConfigCommands("sroc bot", "bot@example.com");
+    assert.deepEqual(cmds[0], ["git", "config", "--global", "user.name", "sroc bot"]);
+    assert.deepEqual(cmds[1], ["git", "config", "--global", "user.email", "bot@example.com"]);
   });
 });

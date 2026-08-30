@@ -226,6 +226,10 @@ export class GrokBuildClient {
       XAI_API_KEY: this.settings.apiKey,
       GH_TOKEN: this.settings.githubToken ?? "",
       GITHUB_TOKEN: this.settings.githubToken ?? "",
+      GIT_AUTHOR_NAME: this.settings.isolateSettings.gitUserName,
+      GIT_AUTHOR_EMAIL: this.settings.isolateSettings.gitUserEmail,
+      GIT_COMMITTER_NAME: this.settings.isolateSettings.gitUserName,
+      GIT_COMMITTER_EMAIL: this.settings.isolateSettings.gitUserEmail,
       GROK_DISABLE_AUTOUPDATER: "1",
     };
 

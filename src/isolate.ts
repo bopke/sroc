@@ -12,6 +12,8 @@ export interface IsolateSettings {
   image: string;
   repoUrl: string;
   githubToken?: string;
+  gitUserName: string;
+  gitUserEmail: string;
   memory: string;
   cpus: string;
   pidsLimit: number;
@@ -72,12 +74,33 @@ export function dockerExecGrokArgs(containerName: string, grokArgs: string[]): s
     "-e",
     "GITHUB_TOKEN",
     "-e",
+    "GIT_TERMINAL_PROMPT=0",
+    "-e",
+    "GH_PROMPT_DISABLED=1",
+    "-e",
+    "GIT_AUTHOR_NAME",
+    "-e",
+    "GIT_AUTHOR_EMAIL",
+    "-e",
+    "GIT_COMMITTER_NAME",
+    "-e",
+    "GIT_COMMITTER_EMAIL",
+    "-e",
     "GROK_DISABLE_AUTOUPDATER=1",
     "-e",
     `HOME=${INNER_HOME}`,
     containerName,
     "grok",
     ...grokArgs,
+  ];
+}
+
+export function gitConfigCommands(name: string, email: string): string[][] {
+  return [
+    ["git", "config", "--global", "user.name", name],
+    ["git", "config", "--global", "user.email", email],
+    ["git", "config", "--global", "init.defaultBranch", "main"],
+    ["git", "config", "--global", "--add", "safe.directory", "*"],
   ];
 }
 
@@ -105,12 +128,59 @@ async function inspectRunning(name: string): Promise<"running" | "stopped" | "mi
   }
 }
 
+function execEnv(settings: IsolateSettings): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    GH_TOKEN: settings.githubToken ?? "",
+    GITHUB_TOKEN: settings.githubToken ?? "",
+  };
+}
+
+async function execIn(
+  containerName: string,
+  settings: IsolateSettings,
+  argv: string[],
+): Promise<{ stdout: string; stderr: string }> {
+  return docker(
+    [
+      "exec",
+      "-e",
+      "GH_TOKEN",
+      "-e",
+      "GITHUB_TOKEN",
+      "-e",
+      "GIT_TERMINAL_PROMPT=0",
+      "-e",
+      "GH_PROMPT_DISABLED=1",
+      "-e",
+      `HOME=${INNER_HOME}`,
+      containerName,
+      ...argv,
+    ],
+    { env: execEnv(settings) },
+  );
+}
+
 async function provision(containerName: string, settings: IsolateSettings): Promise<void> {
+  const { stdout: ready } = await execIn(containerName, settings, [
+    "sh",
+    "-c",
+    "test -f /home/node/.sroc-provisioned && echo yes || echo no",
+  ]);
+
+  if (ready !== "yes") {
+    for (const cmd of gitConfigCommands(settings.gitUserName, settings.gitUserEmail)) {
+      await execIn(containerName, settings, cmd);
+    }
+    if (settings.githubToken) {
+      await execIn(containerName, settings, ["gh", "auth", "setup-git"]);
+    }
+    await execIn(containerName, settings, ["sh", "-c", "touch /home/node/.sroc-provisioned"]);
+  }
+
   if (!settings.cloneRepo) return;
 
-  const { stdout: hasGit } = await docker([
-    "exec",
-    containerName,
+  const { stdout: hasGit } = await execIn(containerName, settings, [
     "sh",
     "-c",
     "test -d /workspace/.git && echo yes || echo no",
@@ -119,11 +189,7 @@ async function provision(containerName: string, settings: IsolateSettings): Prom
 
   const cloneUrl = cloneUrlWithToken(settings.repoUrl, settings.githubToken);
   // Clone into a temp dir then move, because /workspace may already exist (WORKDIR).
-  await docker([
-    "exec",
-    "-e",
-    "GIT_TERMINAL_PROMPT=0",
-    containerName,
+  await execIn(containerName, settings, [
     "sh",
     "-c",
     'git clone --depth 1 "$1" /tmp/repo && find /tmp/repo -mindepth 1 -maxdepth 1 -exec mv {} /workspace/ \\; && rm -rf /tmp/repo',
@@ -131,17 +197,7 @@ async function provision(containerName: string, settings: IsolateSettings): Prom
     cloneUrl,
   ]);
 
-  const origin = settings.repoUrl;
-  await docker(["exec", containerName, "git", "remote", "set-url", "origin", origin]);
-  await docker([
-    "exec",
-    containerName,
-    "git",
-    "config",
-    "user.email",
-    "sroc-bot@users.noreply.github.com",
-  ]);
-  await docker(["exec", containerName, "git", "config", "user.name", "sroc bot"]);
+  await execIn(containerName, settings, ["git", "remote", "set-url", "origin", settings.repoUrl]);
 }
 
 export async function ensureWorkspace(

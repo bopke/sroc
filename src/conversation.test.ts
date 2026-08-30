@@ -120,6 +120,15 @@ describe("buildSessionRules", () => {
     assert.doesNotMatch(rules, /#unknown/);
     assert.match(rules, /Be brief\./);
   });
+
+  it("tells the agent it can open PRs when GitHub is configured", () => {
+    const rules = buildSessionRules(null, "dev", {
+      githubConfigured: true,
+      repoUrl: "https://github.com/bopke/sroc.git",
+    });
+    assert.match(rules, /gh pr create/);
+    assert.match(rules, /github\.com\/bopke\/sroc/);
+  });
 });
 
 describe("isAllowedSource", () => {

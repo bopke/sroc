@@ -68,8 +68,10 @@ mounted. Throw a conversation away with `/isolate prune` (owner only).
 Build the image once: `npm run build-image`. Set `GROK_ISOLATE_CLONE=true`
 only if you want every new conversation to clone up front (slow).
 
-`GITHUB_TOKEN` (optional) lets the container clone a private repo and open PRs.
-Do not pass `DISCORD_TOKEN` into containers.
+`GITHUB_TOKEN` authenticates `git` and `gh` inside the container (the bot
+GitHub account). The agent can clone a repo, push a branch, and `gh pr create`.
+Set `GIT_USER_NAME` / `GIT_USER_EMAIL` for commit identity. Do not pass
+`DISCORD_TOKEN` into containers.
 
 ## Chatting with the bot
 
