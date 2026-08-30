@@ -201,6 +201,7 @@ async function deleteStoredDeployNotice(): Promise<void> {
 }
 
 client.once(Events.ClientReady, (readyClient) => {
+  console.log("Hello world from SROC bot - kod się uruchomił");
   console.log(`Logged in as ${readyClient.user.tag}`);
   console.log(`Grok Build workspace: ${config.grokCwd} (model ${config.grokModel})`);
   setTimeout(() => {
