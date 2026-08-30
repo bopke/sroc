@@ -3,13 +3,30 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, it } from "node:test";
 import { parseGithubProxyPath, startGithubProxy, startXaiProxy } from "./secret-proxy.js";
-import { CONTAINER_XAI_PLACEHOLDER, containerGrokConfig } from "./isolate.js";
+import { CONTAINER_XAI_PLACEHOLDER, containerGrokConfig, grokXaiApiBaseUrl } from "./isolate.js";
+
+describe("grokXaiApiBaseUrl", () => {
+  it("appends /v1 to match grok's default https://api.x.ai/v1", () => {
+    assert.equal(
+      grokXaiApiBaseUrl("http://host.docker.internal:9"),
+      "http://host.docker.internal:9/v1",
+    );
+    assert.equal(
+      grokXaiApiBaseUrl("http://host.docker.internal:9/"),
+      "http://host.docker.internal:9/v1",
+    );
+    assert.equal(
+      grokXaiApiBaseUrl("http://host.docker.internal:9/v1"),
+      "http://host.docker.internal:9/v1",
+    );
+  });
+});
 
 describe("containerGrokConfig", () => {
   it("restricts tool env and points inference at the host proxy", () => {
     const toml = containerGrokConfig("http://host.docker.internal:9");
     assert.match(toml, /include_only/);
-    assert.match(toml, /xai_api_base_url = "http:\/\/host\.docker\.internal:9"/);
+    assert.match(toml, /xai_api_base_url = "http:\/\/host\.docker\.internal:9\/v1"/);
     assert.doesNotMatch(toml, /xai-/);
     assert.doesNotMatch(toml, /gho_/);
   });
