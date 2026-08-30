@@ -26,12 +26,21 @@ export function openDatabase(path: string): DB {
       content TEXT NOT NULL,
       summary TEXT,
       system_prompt_id INTEGER REFERENCES system_prompts(id),
+      grok_session_id TEXT,
       created_at INTEGER NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_message_id);
   `);
+  ensureColumn(db, "messages", "grok_session_id", "TEXT");
   return db;
+}
+
+function ensureColumn(db: DB, table: string, column: string, definition: string): void {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((col) => col.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }
 
 function defaultDbPath(): string {
@@ -62,19 +71,18 @@ export interface MessageRow {
   content: string;
   summary: string | null;
   system_prompt_id: number | null;
+  grok_session_id: string | null;
   created_at: number;
 }
 
 export function getCurrentSystemPrompt(db: DB): SystemPromptRow | undefined {
-  return db
-    .prepare("SELECT * FROM system_prompts ORDER BY id DESC LIMIT 1")
-    .get() as SystemPromptRow | undefined;
+  return db.prepare("SELECT * FROM system_prompts ORDER BY id DESC LIMIT 1").get() as
+    SystemPromptRow | undefined;
 }
 
 export function getSystemPromptById(db: DB, id: number): SystemPromptRow | undefined {
   return db.prepare("SELECT * FROM system_prompts WHERE id = ?").get(id) as
-    | SystemPromptRow
-    | undefined;
+    SystemPromptRow | undefined;
 }
 
 export function insertSystemPrompt(
@@ -99,20 +107,15 @@ export function listSystemPrompts(db: DB, limit: number): SystemPromptRow[] {
 
 export function getMessage(db: DB, messageId: string): MessageRow | undefined {
   return db.prepare("SELECT * FROM messages WHERE message_id = ?").get(messageId) as
-    | MessageRow
-    | undefined;
+    MessageRow | undefined;
 }
 
 export function insertMessage(db: DB, row: Omit<MessageRow, "created_at">): MessageRow {
   const createdAt = Date.now();
   db.prepare(
     `INSERT INTO messages
-      (message_id, parent_message_id, channel_id, author_id, role, content, summary, system_prompt_id, created_at)
-     VALUES (@message_id, @parent_message_id, @channel_id, @author_id, @role, @content, @summary, @system_prompt_id, @created_at)`,
+      (message_id, parent_message_id, channel_id, author_id, role, content, summary, system_prompt_id, grok_session_id, created_at)
+     VALUES (@message_id, @parent_message_id, @channel_id, @author_id, @role, @content, @summary, @system_prompt_id, @grok_session_id, @created_at)`,
   ).run({ ...row, created_at: createdAt });
   return { ...row, created_at: createdAt };
-}
-
-export function setMessageSummary(db: DB, messageId: string, summary: string): void {
-  db.prepare("UPDATE messages SET summary = ? WHERE message_id = ?").run(summary, messageId);
 }

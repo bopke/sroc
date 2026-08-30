@@ -1,0 +1,35 @@
+# sroc Discord bot
+#
+#   ln -s /root/sroc/sroc.service /etc/systemd/system/sroc.service
+#   systemctl daemon-reload
+#   systemctl enable --now sroc
+#
+# Requires a production build (`npm run build`) and a filled-in `.env`.
+# Edit WorkingDirectory / EnvironmentFile / PATH if this checkout is not /root/sroc.
+
+[Unit]
+Description=sroc Discord bot
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/root/sroc
+EnvironmentFile=/root/sroc/.env
+Environment=NODE_ENV=production
+Environment=PATH=/root/.grok/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sroc
+
+[Install]
+WantedBy=multi-user.target

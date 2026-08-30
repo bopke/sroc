@@ -66,7 +66,9 @@ export const systemprompt: Command = {
         .addIntegerOption((opt) =>
           opt
             .setName("count")
-            .setDescription(`How many entries to show (default ${DEFAULT_HISTORY_COUNT}, max ${MAX_HISTORY})`)
+            .setDescription(
+              `How many entries to show (default ${DEFAULT_HISTORY_COUNT}, max ${MAX_HISTORY})`,
+            )
             .setMinValue(1)
             .setMaxValue(MAX_HISTORY),
         ),

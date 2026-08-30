@@ -1,46 +1,70 @@
 # sroc
 
 A Discord bot written in TypeScript using [discord.js](https://discord.js.org/), backed by
-xAI's Grok API for chat and the ability to change its system prompt on demand.
+[Grok Build](https://docs.x.ai) (the `grok` CLI) for chat and coding in a workspace.
 
 ## Setup
 
-1. Copy `.env.example` to `.env` and fill in your credentials:
+1. Install the [Grok CLI](https://x.ai/cli/install.sh) and confirm `grok --version` works.
+2. Copy `.env.example` to `.env` and fill in your credentials:
+
    ```
    DISCORD_TOKEN=
    DISCORD_CLIENT_ID=
    DISCORD_GUILD_ID=      # required — the single guild the bot operates in
-   GROK_API_KEY=
-   GROK_MODEL=grok-3      # optional, defaults to grok-3
+   XAI_API_KEY=           # from https://console.x.ai (GROK_API_KEY still accepted)
+   GROK_MODEL=grok-build  # optional, defaults to grok-build
    ```
+
+   Optional: `GROK_CWD` (project the agent works in; default `./workspace`),
+   `GROK_BIN`, `GROK_ALWAYS_APPROVE` (default true), `GROK_SANDBOX` (default
+   `workspace`), `GROK_TIMEOUT_MS` (default 10 minutes).
+
    In the Discord Developer Portal, enable the **Message Content Intent** for
    the bot (Bot settings > Privileged Gateway Intents) — it's required to read
    message text.
-2. Install dependencies:
+
+3. Install dependencies:
    ```
    npm install
    ```
-3. Deploy slash commands:
+4. Deploy slash commands:
    ```
    npm run deploy-commands
    ```
-4. Run the bot:
+5. Run the bot:
    ```
    npm run dev    # development, with auto-reload
    npm run build && npm start   # production
    ```
 
+   Or install the systemd unit from this checkout (edit paths in `sroc.service`
+   first if the repo is not `/root/sroc`):
+   ```
+   ln -s /root/sroc/sroc.service /etc/systemd/system/sroc.service
+   systemctl daemon-reload
+   systemctl enable --now sroc
+   ```
+   Logs: `journalctl -u sroc -f`. Rebuild with `npm run build` after code
+   changes, then `systemctl restart sroc`.
+
 The bot only responds in the guild configured via `DISCORD_GUILD_ID` and never in DMs.
+
+`GROK_ALWAYS_APPROVE=true` means the agent can run tools (read/edit/run) without
+asking. The default `GROK_SANDBOX=workspace` still limits writes to the working
+directory. Point `GROK_CWD` at the repo you want it to work in.
 
 ## Chatting with the bot
 
-- **@mention the bot** in a message to start a new conversation.
-- **Reply to one of the bot's messages** to continue that conversation — the bot remembers
-  prior turns. Anyone can reply to continue a thread; if multiple people reply to the same
-  bot message, the conversation branches into separate threads that share the history up to
-  that point.
-- Conversation history and a rolling summary of older turns are stored locally in
-  `data/bot.db` (SQLite, gitignored).
+- **@mention the bot** in a message to start a new Grok Build session.
+- **Reply to one of the bot's messages** to continue that session. Anyone can
+  reply; if multiple people reply to the same bot message, each reply forks a
+  new session that shares history up to that point.
+- Discord message ids and Grok session ids are stored in `data/bot.db`
+  (SQLite, gitignored). Conversation history itself lives in Grok Build sessions.
+- Ask it to inspect or change code in `GROK_CWD` — it has the same tools as
+  headless `grok -p`. Long runs post a "Working…" status (including the current
+  tool) until the reply is ready.
 
 ## System prompt
 
@@ -49,7 +73,9 @@ The bot only responds in the guild configured via `DISCORD_GUILD_ID` and never i
   conversations already in progress keep using the prompt that was active when they started.
 - `/systemprompt history [count]` — list recent changes and who made them.
 
-If no system prompt has ever been set, the bot runs without one.
+The Discord system prompt is passed to Grok Build as extra `--rules` on new
+sessions (it does not replace the coding-agent prompt). If none has ever been
+set, the bot still runs with the default Discord/coding rules above.
 
 ## Text commands (`$` prefix)
 
@@ -66,5 +92,5 @@ example) implementing both `execute` (slash) and `runText` (`$prefix`), and regi
 
 ## Testing
 
-`npm test` runs unit tests (Node's built-in test runner) covering the conversation
-context-building and summary-folding logic in `src/conversation.ts`.
+`npm test` runs unit tests (Node's built-in test runner) covering conversation
+routing and the Grok Build CLI argument/stream helpers.

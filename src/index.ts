@@ -1,10 +1,15 @@
-import { Client, Collection, Events, GatewayIntentBits } from "discord.js";
+import { Client, Collection, Events, GatewayIntentBits, type Message } from "discord.js";
 import { config } from "./config.js";
 import { commands } from "./commands/index.js";
 import type { Command } from "./types.js";
 import { db, getCurrentSystemPrompt, insertMessage } from "./db.js";
-import { chat, summarize, type ChatMessage } from "./grok.js";
-import { isTrackedAssistantMessage, prepareReplyContext, stripBotMention } from "./conversation.js";
+import { GrokBuildClient, type GrokStreamEvent } from "./grok.js";
+import {
+  buildSessionRules,
+  getResumeSessionId,
+  isTrackedAssistantMessage,
+  stripBotMention,
+} from "./conversation.js";
 import { formatIncomingContent } from "./discordContext.js";
 
 const client = new Client({
@@ -15,6 +20,16 @@ const client = new Client({
   ],
 });
 
+const grok = new GrokBuildClient({
+  bin: config.grokBin,
+  model: config.grokModel,
+  cwd: config.grokCwd,
+  apiKey: config.grokApiKey,
+  alwaysApprove: config.grokAlwaysApprove,
+  sandbox: config.grokSandbox,
+  timeoutMs: config.grokTimeoutMs,
+});
+
 const commandsByName = new Collection<string, Command>();
 for (const command of commands) {
   commandsByName.set(command.data.name, command);
@@ -22,6 +37,8 @@ for (const command of commands) {
 
 const COMMAND_PREFIX = "$";
 const DISCORD_MESSAGE_LIMIT = 2000;
+const TYPING_INTERVAL_MS = 8000;
+const STATUS_EDIT_INTERVAL_MS = 2000;
 
 function splitMessage(content: string, limit = DISCORD_MESSAGE_LIMIT): string[] {
   if (content.length <= limit) return [content];
@@ -38,15 +55,28 @@ function splitMessage(content: string, limit = DISCORD_MESSAGE_LIMIT): string[] 
   return chunks;
 }
 
-function channelContextMessage(channelName: string | undefined): ChatMessage {
-  return {
-    role: "system",
-    content: `You are replying in the #${channelName ?? "unknown"} channel.`,
-  };
+function toolStatusText(event: GrokStreamEvent): string | null {
+  if (event.type !== "tool_call") return null;
+  const label = event.title ?? event.toolName;
+  return label ? `Working… ${label}` : "Working…";
+}
+
+async function deliverReply(status: Message, replyText: string): Promise<string> {
+  const chunks = splitMessage(replyText);
+  await status.edit(chunks[0]);
+  let lastSentId = status.id;
+  const channel = status.channel;
+  if (!channel.isSendable()) return lastSentId;
+  for (let i = 1; i < chunks.length; i++) {
+    const sent = await channel.send(chunks[i]);
+    lastSentId = sent.id;
+  }
+  return lastSentId;
 }
 
 client.once(Events.ClientReady, (readyClient) => {
   console.log(`Logged in as ${readyClient.user.tag}`);
+  console.log(`Grok Build workspace: ${config.grokCwd} (model ${config.grokModel})`);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -93,9 +123,11 @@ client.on(Events.MessageCreate, async (message) => {
 
   const repliedToId = message.reference?.messageId;
   let parentMessageId: string | null;
+  let resumeSessionId: string | null = null;
 
   if (repliedToId && isTrackedAssistantMessage(db, repliedToId)) {
     parentMessageId = repliedToId;
+    resumeSessionId = getResumeSessionId(db, repliedToId);
   } else if (message.mentions.has(client.user)) {
     parentMessageId = null;
   } else {
@@ -115,17 +147,36 @@ client.on(Events.MessageCreate, async (message) => {
     strippedText,
   );
 
+  const channelName = message.guild.channels.cache.get(message.channelId)?.name;
+  const isNewSession = !resumeSessionId;
+  const rules = isNewSession
+    ? buildSessionRules(getCurrentSystemPrompt(db)?.content ?? null, channelName)
+    : null;
+
+  const status = await message.reply("Working…");
+  const typing = setInterval(() => {
+    message.channel.sendTyping().catch(() => undefined);
+  }, TYPING_INTERVAL_MS);
+  await message.channel.sendTyping().catch(() => undefined);
+
+  let lastStatusEdit = 0;
+  const onEvent = (event: GrokStreamEvent) => {
+    const text = toolStatusText(event);
+    if (!text) return;
+    const now = Date.now();
+    if (now - lastStatusEdit < STATUS_EDIT_INTERVAL_MS) return;
+    lastStatusEdit = now;
+    status.edit(text).catch(() => undefined);
+  };
+
   try {
-    const context = await prepareReplyContext(db, parentMessageId, summarize);
-    const channelName = message.guild.channels.cache.get(message.channelId)?.name;
-
-    await message.channel.sendTyping().catch(() => undefined);
-
-    const replyText = await chat(context.systemPrompt, [
-      channelContextMessage(channelName),
-      ...context.contextMessages,
-      { role: "user", content },
-    ]);
+    const result = await grok.prompt({
+      prompt: content,
+      resumeSessionId,
+      fork: Boolean(resumeSessionId),
+      rules,
+      onEvent,
+    });
 
     insertMessage(db, {
       message_id: message.id,
@@ -135,37 +186,30 @@ client.on(Events.MessageCreate, async (message) => {
       role: "user",
       content,
       summary: null,
-      system_prompt_id:
-        parentMessageId === null ? (getCurrentSystemPrompt(db)?.id ?? null) : null,
+      system_prompt_id: parentMessageId === null ? (getCurrentSystemPrompt(db)?.id ?? null) : null,
+      grok_session_id: null,
     });
 
-    const chunks = splitMessage(replyText);
-    let lastSentId: string | undefined;
-    for (let i = 0; i < chunks.length; i++) {
-      if (i === chunks.length - 1) {
-        const sent = await message.reply(chunks[i]);
-        lastSentId = sent.id;
-      } else {
-        const sent = await message.channel.send(chunks[i]);
-        lastSentId = sent.id;
-      }
-    }
+    const lastSentId = await deliverReply(status, result.text);
 
     insertMessage(db, {
-      message_id: lastSentId!,
+      message_id: lastSentId,
       parent_message_id: message.id,
       channel_id: message.channelId,
       author_id: client.user.id,
       role: "assistant",
-      content: replyText,
+      content: result.text,
       summary: null,
       system_prompt_id: null,
+      grok_session_id: result.sessionId,
     });
   } catch (error) {
     console.error("Failed to handle chat message:", error);
-    await message
-      .reply("Sorry, I couldn't get a response from Grok just now. Please try again.")
+    await status
+      .edit("Sorry, I couldn't get a response from Grok just now. Please try again.")
       .catch(() => undefined);
+  } finally {
+    clearInterval(typing);
   }
 });
 

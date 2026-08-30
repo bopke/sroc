@@ -43,7 +43,9 @@ describe("formatIncomingContent", () => {
 
   it("includes embed title, description, and url", () => {
     const message = baseMessage({
-      embeds: [{ title: "Cool Article", description: "About cool things", url: "https://example.com" }],
+      embeds: [
+        { title: "Cool Article", description: "About cool things", url: "https://example.com" },
+      ],
     });
     const result = formatIncomingContent(message, "look at this");
     assert.equal(

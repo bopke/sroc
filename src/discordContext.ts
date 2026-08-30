@@ -24,7 +24,8 @@ export interface FormattableMessage {
  * URLs, and embed title/description — not sent as actual file/image content.
  */
 export function formatIncomingContent(message: FormattableMessage, text: string): string {
-  const speaker = message.member?.displayName ?? message.author.displayName ?? message.author.username;
+  const speaker =
+    message.member?.displayName ?? message.author.displayName ?? message.author.username;
 
   const parts: string[] = [];
   if (text) parts.push(text);
