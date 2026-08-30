@@ -33,6 +33,12 @@ export function openDatabase(path: string): DB {
     );
 
     CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_message_id);
+
+    CREATE TABLE IF NOT EXISTS deploy_notice (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      channel_id TEXT NOT NULL,
+      message_id TEXT NOT NULL
+    );
   `);
   ensureColumn(db, "messages", "grok_session_id", "TEXT");
   ensureColumn(db, "messages", "workspace_id", "TEXT");
@@ -142,6 +148,29 @@ export function getWorkspaceId(db: DB, messageId: string | null): string | null 
 export function getMessage(db: DB, messageId: string): MessageRow | undefined {
   return db.prepare("SELECT * FROM messages WHERE message_id = ?").get(messageId) as
     MessageRow | undefined;
+}
+
+export interface DeployNotice {
+  channel_id: string;
+  message_id: string;
+}
+
+export function setDeployNotice(db: DB, channelId: string, messageId: string): void {
+  db.prepare(
+    `INSERT INTO deploy_notice (id, channel_id, message_id) VALUES (1, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET channel_id = excluded.channel_id, message_id = excluded.message_id`,
+  ).run(channelId, messageId);
+}
+
+export function takeDeployNotice(db: DB): DeployNotice | undefined {
+  return db.transaction(() => {
+    const row = db.prepare("SELECT channel_id, message_id FROM deploy_notice WHERE id = 1").get() as
+      | DeployNotice
+      | undefined;
+    if (!row) return undefined;
+    db.prepare("DELETE FROM deploy_notice WHERE id = 1").run();
+    return row;
+  })();
 }
 
 export function insertMessage(db: DB, row: Omit<MessageRow, "created_at">): MessageRow {

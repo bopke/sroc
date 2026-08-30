@@ -2,7 +2,14 @@ import { Client, Collection, Events, GatewayIntentBits, Partials, type Message }
 import { config } from "./config.js";
 import { commands } from "./commands/index.js";
 import type { Command } from "./types.js";
-import { db, getCurrentSystemPrompt, getWorkspaceId, insertMessage, promptScope } from "./db.js";
+import {
+  db,
+  getCurrentSystemPrompt,
+  getWorkspaceId,
+  insertMessage,
+  promptScope,
+  takeDeployNotice,
+} from "./db.js";
 import { GrokBuildClient, type GrokStreamEvent } from "./grok.js";
 import {
   buildSessionRules,
@@ -56,6 +63,7 @@ const DISCORD_MESSAGE_LIMIT = 2000;
 const TYPING_INTERVAL_MS = 8000;
 const STATUS_EDIT_INTERVAL_MS = 2000;
 const WORKING_DELAY_MS = 10_000;
+const DEPLOY_NOTICE_DELETE_MS = 10_000;
 
 function splitMessage(content: string, limit = DISCORD_MESSAGE_LIMIT): string[] {
   if (content.length <= limit) return [content];
@@ -163,9 +171,25 @@ function startWorkingStatus(userMessage: Message): {
   };
 }
 
+async function deleteStoredDeployNotice(): Promise<void> {
+  const notice = takeDeployNotice(db);
+  if (!notice) return;
+  try {
+    const channel = await client.channels.fetch(notice.channel_id);
+    if (!channel || !channel.isTextBased() || !("messages" in channel)) return;
+    const posted = await channel.messages.fetch(notice.message_id);
+    await posted.delete();
+  } catch (error) {
+    console.error("Failed to delete deploy notice:", error);
+  }
+}
+
 client.once(Events.ClientReady, (readyClient) => {
   console.log(`Logged in as ${readyClient.user.tag}`);
   console.log(`Grok Build workspace: ${config.grokCwd} (model ${config.grokModel})`);
+  setTimeout(() => {
+    void deleteStoredDeployNotice();
+  }, DEPLOY_NOTICE_DELETE_MS);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {

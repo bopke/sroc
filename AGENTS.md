@@ -93,7 +93,10 @@ and `npm run deploy-commands` in the bot checkout, then `process.exit(0)` so
 systemd restarts the new `dist/`. A unit restart alone does not compile
 TypeScript (`dist/` is gitignored). Do not add `ExecStartPre` rebuilds; `/deploy`
 is the intended path. Deploy-commands is best-effort: a failure is reported but
-the process still restarts after a successful build.
+the process still restarts after a successful build. On success, persist the
+reply's `channel_id`/`message_id` in `deploy_notice` (singleton). After
+`ClientReady`, wait 10 seconds then fetch and delete that message and clear
+the row. Failed deploys do not store a notice.
 
 systemd system units often omit `HOME`. Git then cannot read `~/.gitconfig` (the
 `gh` credential helper) and HTTPS pulls fail with "terminal prompts disabled".

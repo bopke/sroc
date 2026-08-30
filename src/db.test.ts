@@ -6,6 +6,8 @@ import {
   listSystemPrompts,
   openDatabase,
   promptScope,
+  setDeployNotice,
+  takeDeployNotice,
   type DB,
 } from "./db.js";
 
@@ -53,5 +55,14 @@ describe("system prompt scopes", () => {
     const dm = listSystemPrompts(db, 10, "dm").map((row) => row.content);
     assert.deepEqual(guild, ["G2", "G1"]);
     assert.deepEqual(dm, ["D1"]);
+  });
+});
+
+describe("deploy notice", () => {
+  it("stores one notice and take removes it", () => {
+    setDeployNotice(db, "chan-1", "msg-1");
+    setDeployNotice(db, "chan-2", "msg-2");
+    assert.deepEqual(takeDeployNotice(db), { channel_id: "chan-2", message_id: "msg-2" });
+    assert.equal(takeDeployNotice(db), undefined);
   });
 });

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { SlashCommandBuilder } from "discord.js";
 import type { Command } from "../types.js";
+import { db, setDeployNotice } from "../db.js";
 
 const execFileAsync = promisify(execFile);
 const STEP_TIMEOUT_MS = 120_000;
@@ -98,6 +99,8 @@ export const deploy: Command = {
     try {
       const summary = await pullAndBuild();
       await interaction.editReply(summary);
+      const reply = await interaction.fetchReply();
+      setDeployNotice(db, reply.channelId, reply.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await interaction.editReply(`Deploy failed.\n${clipLog(message)}`);
@@ -110,6 +113,7 @@ export const deploy: Command = {
     try {
       const summary = await pullAndBuild();
       await status.edit(summary);
+      setDeployNotice(db, status.channelId, status.id);
     } catch (error) {
       const errMessage = error instanceof Error ? error.message : String(error);
       await status.edit(`Deploy failed.\n${clipLog(errMessage)}`);

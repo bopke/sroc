@@ -91,6 +91,7 @@ Do not pass `DISCORD_TOKEN` into containers.
 
 - `/deploy` — `git pull --ff-only`, `npm run build`, register slash commands,
   then exit so systemd (`Restart=always`) starts the new `dist/`. Also `$deploy`.
+  The deploy reply is deleted 10 seconds after the new process is up.
 - `/isolate status` / `/isolate prune` — list or destroy conversation containers
   (owner only).
 
