@@ -53,6 +53,13 @@ describe("buildGrokArgs", () => {
     assert.ok(!args.includes("--always-approve"));
     assert.ok(!args.includes("--sandbox"));
   });
+
+  it("omits -m when the model is default so the CLI picks its configured model", () => {
+    for (const model of ["default", "DEFAULT", " default ", ""]) {
+      const args = buildGrokArgs({ ...base, model });
+      assert.ok(!args.includes("-m"), `expected no -m for model ${JSON.stringify(model)}`);
+    }
+  });
 });
 
 describe("parseStreamLine / reduceStdout", () => {

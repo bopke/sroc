@@ -33,7 +33,8 @@ install or enable the unit as part of a code change.
 Do not commit `.env`, `data/`, `workspace/`, or `dist/`. Copy `.env.example` for
 local credentials. Required: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`,
 `DISCORD_GUILD_ID`, and `XAI_API_KEY` (or `GROK_API_KEY`). Optional: `GROK_MODEL`
-(default `grok-build`), `GROK_BIN`, `GROK_CWD` (default `./workspace`),
+(default `grok-build`; `default` omits `-m` so the CLI uses its configured
+model), `GROK_BIN`, `GROK_CWD` (default `./workspace`),
 `GROK_ALWAYS_APPROVE` (default true), `GROK_SANDBOX` (default `workspace`),
 `GROK_TIMEOUT_MS` (default 600000).
 
@@ -43,6 +44,12 @@ does not load config.
 
 The `grok` CLI must be on `PATH` (or set `GROK_BIN`) at runtime. Unit tests do
 not spawn it.
+
+## Version control
+
+Commit and push to `origin` after each coherent unit of work. Do not wait for
+the user to ask. Skip only if the change is still mid-flight or blocked. Never
+commit `.env`, `data/`, `workspace/`, or `dist/`.
 
 ## Layout
 
@@ -85,8 +92,8 @@ not spawn it.
 - **Grok Build owns history.** Send only the new user turn as `-p`. Do not rebuild a chat-completions message list. Do not call the OpenAI/xAI HTTP chat API.
 - **`--rules`, not `--system-prompt-override`.** Discord `/systemprompt` is extra rules on **new** sessions only. Overriding the system prompt would strip Grok Build's coding-agent instructions. In-flight sessions keep the rules they were created with.
 - **`system_prompt_id` only on roots** (Discord-side audit). `grok_session_id` only on assistant rows. Anyone may change the Discord system prompt — no permission gate.
-- **Failed Grok run:** log, edit the "Working…" message to a short apology, **do not persist** the user or assistant node (retry-by-reply must land on the same valid parent).
-- **Long replies:** split on the nearest preceding newline at 2000 chars. The "Working…" reply is edited into the first chunk; later chunks are untracked channel messages. The last sent message id is the `assistant` row (the one a user must reply to in order to continue).
+- **Failed Grok run:** log, edit the `-# Working...` message to a short apology, **do not persist** the user or assistant node (retry-by-reply must land on the same valid parent).
+- **Long replies:** split on the nearest preceding newline at 2000 chars. The `-# Working...` reply is edited into the first chunk; later chunks are untracked channel messages. The last sent message id is the `assistant` row (the one a user must reply to in order to continue).
 - **Stored user content** is `formatIncomingContent(...)` output (`Speaker (@username): body`), with the bot mention stripped. Attachments/embeds are text notes (name/url/title), not file bytes.
 - **Legacy rows** with a null `grok_session_id` start a fresh Grok session (still parented in the Discord tree).
 

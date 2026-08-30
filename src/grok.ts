@@ -31,7 +31,7 @@ export interface CollectedResult {
 
 export interface BuildGrokArgsInput {
   prompt: string;
-  model: string;
+  model?: string | null;
   cwd: string;
   resumeSessionId?: string;
   fork?: boolean;
@@ -40,18 +40,20 @@ export interface BuildGrokArgsInput {
   sandbox?: string | null;
 }
 
+/** Omit `-m` so Grok Build uses its configured default model. */
+export function usesCliDefaultModel(model: string | null | undefined): boolean {
+  if (model == null) return true;
+  const trimmed = model.trim();
+  return trimmed === "" || trimmed.toLowerCase() === "default";
+}
+
 export function buildGrokArgs(opts: BuildGrokArgsInput): string[] {
-  const args = [
-    "-p",
-    opts.prompt,
-    "-m",
-    opts.model,
-    "--cwd",
-    opts.cwd,
-    "--output-format",
-    "streaming-json",
-    "--verbatim",
-  ];
+  const args = ["-p", opts.prompt];
+  const model = opts.model?.trim() ?? "";
+  if (!usesCliDefaultModel(model)) {
+    args.push("-m", model);
+  }
+  args.push("--cwd", opts.cwd, "--output-format", "streaming-json", "--verbatim");
 
   if (opts.alwaysApprove) args.push("--always-approve");
   if (opts.sandbox && opts.sandbox !== "off") args.push("--sandbox", opts.sandbox);

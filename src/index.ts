@@ -58,7 +58,7 @@ function splitMessage(content: string, limit = DISCORD_MESSAGE_LIMIT): string[] 
 function toolStatusText(event: GrokStreamEvent): string | null {
   if (event.type !== "tool_call") return null;
   const label = event.title ?? event.toolName;
-  return label ? `Working… ${label}` : "Working…";
+  return label ? `-# Working... ${label}` : "-# Working...";
 }
 
 async function deliverReply(status: Message, replyText: string): Promise<string> {
@@ -153,7 +153,7 @@ client.on(Events.MessageCreate, async (message) => {
     ? buildSessionRules(getCurrentSystemPrompt(db)?.content ?? null, channelName)
     : null;
 
-  const status = await message.reply("Working…");
+  const status = await message.reply("-# Working...");
   const typing = setInterval(() => {
     message.channel.sendTyping().catch(() => undefined);
   }, TYPING_INTERVAL_MS);

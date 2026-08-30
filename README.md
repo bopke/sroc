@@ -13,7 +13,7 @@ A Discord bot written in TypeScript using [discord.js](https://discord.js.org/),
    DISCORD_CLIENT_ID=
    DISCORD_GUILD_ID=      # required — the single guild the bot operates in
    XAI_API_KEY=           # from https://console.x.ai (GROK_API_KEY still accepted)
-   GROK_MODEL=grok-build  # optional, defaults to grok-build
+   GROK_MODEL=grok-build  # optional; "default" uses the CLI's configured model
    ```
 
    Optional: `GROK_CWD` (project the agent works in; default `./workspace`),
@@ -63,7 +63,7 @@ directory. Point `GROK_CWD` at the repo you want it to work in.
 - Discord message ids and Grok session ids are stored in `data/bot.db`
   (SQLite, gitignored). Conversation history itself lives in Grok Build sessions.
 - Ask it to inspect or change code in `GROK_CWD` — it has the same tools as
-  headless `grok -p`. Long runs post a "Working…" status (including the current
+  headless `grok -p`. Long runs post a `-# Working...` status (including the current
   tool) until the reply is ready.
 
 ## System prompt
