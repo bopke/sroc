@@ -9,7 +9,6 @@ import {
   type PartialMessageReaction,
   type PartialUser,
   type Sticker,
-  type TextBasedChannel,
 } from "discord.js";
 import { config } from "./config.js";
 import { isAlreadyPostedToValut, markAsPostedToValut } from "./db.js";
@@ -31,6 +30,12 @@ import {
   stripBotMention,
 } from "./conversation.js";
 import { formatIncomingContent } from "./discordContext.js";
+import { dockerBridgeAddress, startXaiProxy } from "./secret-proxy.js";
+
+const xaiProxy = await startXaiProxy({
+  bindHost: dockerBridgeAddress(),
+  bearerToken: config.grokApiKey,
+});
 
 const client = new Client({
   intents: [
@@ -63,6 +68,7 @@ const grok = new GrokBuildClient({
     cpus: config.grokIsolateCpus,
     pidsLimit: 256,
     cloneRepo: config.grokIsolateClone,
+    xaiProxyUrl: `http://host.docker.internal:${xaiProxy.port}`,
   },
   noPlan: config.grokNoPlan,
   noSubagents: config.grokNoSubagents,
@@ -423,8 +429,12 @@ async function handleGoldReaction(
       return;
     }
 
-    // 1:1 copy of the original message (content + embeds + attachments + stickers etc.)
-    const posted = await (valutChannel as TextBasedChannel).send({
+    if (!valutChannel.isSendable()) {
+      console.error("VALUT_CHANNEL_ID is not sendable");
+      return;
+    }
+
+    const posted = await valutChannel.send({
       content: message.content || undefined,
       embeds: message.embeds,
       files: message.attachments.map((a) => a.url),

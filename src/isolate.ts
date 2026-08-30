@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -18,6 +18,7 @@ export interface IsolateSettings {
   cpus: string;
   pidsLimit: number;
   cloneRepo: boolean;
+  xaiProxyUrl: string;
 }
 
 export function workspaceContainerName(workspaceId: string): string {
@@ -56,6 +57,8 @@ export function dockerRunArgs(containerName: string, settings: IsolateSettings):
     "no-new-privileges",
     "--network",
     "bridge",
+    "--add-host",
+    "host.docker.internal:host-gateway",
     "--tmpfs",
     "/tmp:mode=1777,exec",
     settings.image,
@@ -64,15 +67,35 @@ export function dockerRunArgs(containerName: string, settings: IsolateSettings):
   ];
 }
 
-export function dockerExecGrokArgs(containerName: string, grokArgs: string[]): string[] {
+export const CONTAINER_XAI_PLACEHOLDER = "sroc-local";
+
+export function containerGrokConfig(xaiProxyUrl: string): string {
+  return [
+    "[cli]",
+    "auto_update = false",
+    "",
+    "[endpoints]",
+    `xai_api_base_url = ${JSON.stringify(xaiProxyUrl)}`,
+    "",
+    "[shell_environment_policy]",
+    'inherit = "core"',
+    "ignore_default_excludes = false",
+    'include_only = ["PATH", "HOME", "USER", "LANG", "LC_ALL", "TERM", "TMPDIR", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"]',
+    "",
+  ].join("\n");
+}
+
+export function dockerExecGrokArgs(
+  containerName: string,
+  grokArgs: string[],
+  xaiProxyUrl: string,
+): string[] {
   return [
     "exec",
     "-e",
-    "XAI_API_KEY",
+    `XAI_API_KEY=${CONTAINER_XAI_PLACEHOLDER}`,
     "-e",
-    "GH_TOKEN",
-    "-e",
-    "GITHUB_TOKEN",
+    `GROK_XAI_API_BASE_URL=${xaiProxyUrl}`,
     "-e",
     "GIT_TERMINAL_PROMPT=0",
     "-e",
@@ -128,26 +151,17 @@ async function inspectRunning(name: string): Promise<"running" | "stopped" | "mi
   }
 }
 
-function execEnv(settings: IsolateSettings): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    GH_TOKEN: settings.githubToken ?? "",
-    GITHUB_TOKEN: settings.githubToken ?? "",
-  };
+function dockerClientEnv(): NodeJS.ProcessEnv {
+  return { ...process.env };
 }
 
 async function execIn(
   containerName: string,
-  settings: IsolateSettings,
   argv: string[],
 ): Promise<{ stdout: string; stderr: string }> {
   return docker(
     [
       "exec",
-      "-e",
-      "GH_TOKEN",
-      "-e",
-      "GITHUB_TOKEN",
       "-e",
       "GIT_TERMINAL_PROMPT=0",
       "-e",
@@ -157,12 +171,48 @@ async function execIn(
       containerName,
       ...argv,
     ],
-    { env: execEnv(settings) },
+    { env: dockerClientEnv() },
   );
 }
 
+function execWithStdin(containerName: string, argv: string[], input: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "docker",
+      [
+        "exec",
+        "-i",
+        "-e",
+        "GIT_TERMINAL_PROMPT=0",
+        "-e",
+        "GH_PROMPT_DISABLED=1",
+        "-e",
+        `HOME=${INNER_HOME}`,
+        containerName,
+        ...argv,
+      ],
+      { stdio: ["pipe", "pipe", "pipe"], env: dockerClientEnv() },
+    );
+    const stderrChunks: Buffer[] = [];
+    child.stderr?.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          Buffer.concat(stderrChunks).toString("utf8").trim() || `docker exec exited ${code}`,
+        ),
+      );
+    });
+    child.stdin?.end(input);
+  });
+}
+
 async function provision(containerName: string, settings: IsolateSettings): Promise<void> {
-  const { stdout: ready } = await execIn(containerName, settings, [
+  const { stdout: ready } = await execIn(containerName, [
     "sh",
     "-c",
     "test -f /home/node/.sroc-provisioned && echo yes || echo no",
@@ -170,34 +220,41 @@ async function provision(containerName: string, settings: IsolateSettings): Prom
 
   if (ready !== "yes") {
     for (const cmd of gitConfigCommands(settings.gitUserName, settings.gitUserEmail)) {
-      await execIn(containerName, settings, cmd);
+      await execIn(containerName, cmd);
     }
+    await execWithStdin(
+      containerName,
+      ["sh", "-c", "mkdir -p /home/node/.grok && cat > /home/node/.grok/config.toml"],
+      containerGrokConfig(settings.xaiProxyUrl),
+    );
     if (settings.githubToken) {
-      await execIn(containerName, settings, ["gh", "auth", "setup-git"]);
+      await execWithStdin(
+        containerName,
+        ["gh", "auth", "login", "--hostname", "github.com", "--with-token"],
+        `${settings.githubToken}\n`,
+      );
+      await execIn(containerName, ["gh", "auth", "setup-git"]);
     }
-    await execIn(containerName, settings, ["sh", "-c", "touch /home/node/.sroc-provisioned"]);
+    await execIn(containerName, ["sh", "-c", "touch /home/node/.sroc-provisioned"]);
   }
 
   if (!settings.cloneRepo) return;
 
-  const { stdout: hasGit } = await execIn(containerName, settings, [
+  const { stdout: hasGit } = await execIn(containerName, [
     "sh",
     "-c",
     "test -d /workspace/.git && echo yes || echo no",
   ]);
   if (hasGit === "yes") return;
 
-  const cloneUrl = cloneUrlWithToken(settings.repoUrl, settings.githubToken);
-  // Clone into a temp dir then move, because /workspace may already exist (WORKDIR).
-  await execIn(containerName, settings, [
+  // Clone without embedding the token in argv; gh/git credentials are already on disk.
+  await execIn(containerName, [
     "sh",
     "-c",
     'git clone --depth 1 "$1" /tmp/repo && find /tmp/repo -mindepth 1 -maxdepth 1 -exec mv {} /workspace/ \\; && rm -rf /tmp/repo',
     "sh",
-    cloneUrl,
+    settings.repoUrl,
   ]);
-
-  await execIn(containerName, settings, ["git", "remote", "set-url", "origin", settings.repoUrl]);
 }
 
 export async function ensureWorkspace(

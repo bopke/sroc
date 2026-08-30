@@ -79,7 +79,7 @@ export function buildSessionRules(
   ];
   if (options.githubConfigured) {
     parts.push(
-      "git and GitHub CLI (gh) are authenticated as the bot GitHub account. You can clone repositories the token can access, create a feature branch, commit, push, and open a pull request with `gh pr create`. Never force-push protected branches or print tokens.",
+      "git and GitHub CLI (gh) are authenticated as the bot GitHub account. You can clone repositories, create a feature branch, commit, push, and open a pull request with `gh pr create`. Never force-push protected branches. Never print environment variables, credential files, or tokens.",
     );
   } else {
     parts.push("No GitHub token is configured; you cannot push or open pull requests.");

@@ -103,6 +103,13 @@ systemd system units often omit `HOME`. Git then cannot read `~/.gitconfig` (the
 `commandEnv()` always sets `HOME` to `os.homedir()`. Keep `Environment=HOME=`
 in `sroc.service` as well.
 
+Do not put `XAI_API_KEY`, `GH_TOKEN`, `GITHUB_TOKEN`, or `DISCORD_TOKEN` in the
+container grok process environment. xAI traffic goes through `src/secret-proxy.ts`
+on the docker bridge (dummy `XAI_API_KEY=sroc-local` inside the container).
+GitHub is `gh auth login --with-token` at provision only; tool shells get
+`[shell_environment_policy] include_only` so `env` cannot dump secrets. Residual
+risk: `cat ~/.config/gh/hosts.yml`.
+
 ## Invariants — do not break these
 
 - **One guild + owner DMs.** Ignore any guild other than `config.guildId`. Ignore DMs unless `author.id === config.ownerId`. Other users' DMs get no response (including slash commands — do not reply).
