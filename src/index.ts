@@ -114,14 +114,9 @@ async function deliverReply(
     throw new Error("Channel is not sendable");
   }
 
+  // Remove the temporary "Working..." status message when we have the final result
   if (status) {
-    await status.edit(chunks[0]);
-    let lastSentId = status.id;
-    for (let i = 1; i < chunks.length; i++) {
-      const sent = await channel.send(chunks[i]);
-      lastSentId = sent.id;
-    }
-    return lastSentId;
+    await status.delete().catch(() => undefined);
   }
 
   let lastSentId: string | undefined;
@@ -359,7 +354,8 @@ client.on(Events.MessageCreate, async (message) => {
     const apology = "Sorry, I couldn't get a response from Grok just now. Please try again.";
     const status = working.getStatus();
     if (status) {
-      await status.edit(apology).catch(() => undefined);
+      await status.delete().catch(() => undefined);
+      await message.reply(apology).catch(() => undefined);
     } else {
       await message.reply(apology).catch(() => undefined);
     }

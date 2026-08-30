@@ -38,7 +38,7 @@ describe("dockerRunArgs", () => {
       cpus: "1",
       pidsLimit: 256,
       gitUserName: "sroc bot",
-      gitUserEmail: "sroc-bot@users.noreply.github.com",
+      gitUserEmail: "bot@bopke.dev",
       cloneRepo: false,
     });
     assert.ok(args.includes("--cap-drop"));

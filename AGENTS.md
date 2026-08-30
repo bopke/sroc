@@ -112,17 +112,18 @@ in `sroc.service` as well.
 - **Grok Build owns history.** Send only the new user turn as `-p`. Do not rebuild a chat-completions message list. Do not call the OpenAI/xAI HTTP chat API.
 - **`--rules`, not `--system-prompt-override`.** Discord `/systemprompt` is extra rules on **new** sessions only. Overriding the system prompt would strip Grok Build's coding-agent instructions. In-flight sessions keep the rules they were created with.
 - **`system_prompt_id` only on roots** (Discord-side audit). `grok_session_id` only on assistant rows. Anyone in the guild may change the guild system prompt; only the owner can change the DM prompt (because only they can DM).
-- **Failed Grok run:** log, send a short apology, **do not persist** the user or assistant node (retry-by-reply must land on the same valid parent). If a `-# Working...` status exists, edit it; otherwise reply.
-- **Working status:** do not post `-# Working...` until the turn has been running for 10 seconds. Fast replies have no status message. If it is posted, tool titles may update it.
-- **Long replies:** split on the nearest preceding newline at 2000 chars. If a `-# Working...` reply exists, edit it into the first chunk; otherwise the last chunk is `message.reply(...)`. Later chunks are untracked channel messages. The last sent message id is the `assistant` row (the one a user must reply to in order to continue).
+- **Failed Grok run:** log, send a short apology, **do not persist** the user or assistant node (retry-by-reply must land on the same valid parent). If a `-# Working...` status exists, delete it before replying; otherwise just reply.
+- **Working status:** do not post `-# Working...` until the turn has been running for 10 seconds. Fast replies have no status message. The status message (if posted) is deleted as soon as the final result arrives.
+- **Long replies:** split on the nearest preceding newline at 2000 chars. The final result is always sent as a fresh `message.reply(...)` (the temporary Working... message is deleted first). Later chunks are untracked channel messages. The last sent message id is the `assistant` row (the one a user must reply to in order to continue).
 - **Stored user content** is `formatIncomingContent(...)` output (`Speaker (@username): body`), with the bot mention stripped. Attachments/embeds are text notes (name/url/title), not file bytes.
 - **Legacy rows** with a null `grok_session_id` start a fresh Grok session (still parented in the Discord tree).
 - **Isolate by default.** Each conversation root gets a Docker container
   (`sroc-ws-<workspace_id>`, label `sroc.workspace=1`). Do **not** clone the
   repo on provision unless `GROK_ISOLATE_CLONE=true` — an empty workspace keeps
   simple chat fast. Tell Grok the repo URL in `--rules` so it can clone when
-  the user asks for file/PR work. Provision git identity (`GIT_USER_NAME` /
-  `GIT_USER_EMAIL`) and `gh auth setup-git` when `GITHUB_TOKEN` is set, so
+  the user asks for file/PR work. The bot now defaults to `GIT_USER_NAME=Bopke`
+  + `GIT_USER_EMAIL=bot@bopke.dev` (your dedicated bot account). `gh auth setup-git`
+  is called automatically when `GITHUB_TOKEN` is set. Commits appear signed as you.
   `gh pr create` works. Do not mount the host checkout, `.env`, or
   `data/`. Do not pass `DISCORD_TOKEN` into the container. Inner grok sandbox
   is `off`; Docker is the isolation. Default `--no-plan`, `--no-subagents`,
