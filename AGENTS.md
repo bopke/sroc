@@ -121,8 +121,9 @@ in `sroc.service` as well.
   (`sroc-ws-<workspace_id>`, label `sroc.workspace=1`). Do **not** clone the
   repo on provision unless `GROK_ISOLATE_CLONE=true` — an empty workspace keeps
   simple chat fast. Tell Grok the repo URL in `--rules` so it can clone when
-  the user asks for file/PR work. Provision git identity (`GIT_USER_NAME` /
-  `GIT_USER_EMAIL`) and `gh auth setup-git` when `GITHUB_TOKEN` is set, so
+  the user asks for file/PR work. Provision git identity (`GIT_USER_NAME=bopke`,
+  `GIT_USER_EMAIL=...@users.noreply.github.com`) and `gh auth setup-git` when
+  `GITHUB_TOKEN` is set, so commits are properly attributed to your GitHub account.
   `gh pr create` works. Do not mount the host checkout, `.env`, or
   `data/`. Do not pass `DISCORD_TOKEN` into the container. Inner grok sandbox
   is `off`; Docker is the isolation. Default `--no-plan`, `--no-subagents`,
