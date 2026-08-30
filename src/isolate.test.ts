@@ -40,25 +40,36 @@ describe("dockerRunArgs", () => {
       gitUserName: "sroc bot",
       gitUserEmail: "bot@bopke.dev",
       cloneRepo: false,
+      xaiProxyUrl: "http://host.docker.internal:9",
     });
     assert.ok(args.includes("--cap-drop"));
     assert.ok(args.includes("ALL"));
     assert.ok(args.includes("--memory"));
     assert.ok(args.includes(`${WORKSPACE_LABEL}=1`));
     assert.equal(args[args.indexOf("--name") + 1], "sroc-ws-1");
+    assert.ok(args.includes("host.docker.internal:host-gateway"));
     assert.ok(!args.join(" ").includes("DISCORD_TOKEN"));
   });
 });
 
 describe("dockerExecGrokArgs", () => {
-  it("passes selected env names into the container, not a host cwd", () => {
-    const args = dockerExecGrokArgs("sroc-ws-1", ["-p", "hi", "--cwd", "/workspace"]);
-    assert.deepEqual(args.slice(0, 3), ["exec", "-e", "XAI_API_KEY"]);
+  it("does not pass real API or GitHub tokens into the grok process", () => {
+    const args = dockerExecGrokArgs(
+      "sroc-ws-1",
+      ["-p", "hi", "--cwd", "/workspace"],
+      "http://host.docker.internal:9",
+      "http://host.docker.internal:8",
+    );
+    const joined = args.join(" ");
     assert.ok(args.includes("grok"));
-    assert.ok(args.includes("/workspace"));
-    assert.ok(args.includes("GH_TOKEN"));
-    assert.ok(args.includes("GIT_AUTHOR_NAME"));
-    assert.ok(!args.includes("DISCORD_TOKEN"));
+    assert.ok(joined.includes("XAI_API_KEY=sroc-local"));
+    assert.ok(joined.includes("GROK_XAI_API_BASE_URL=http://host.docker.internal:9"));
+    assert.ok(joined.includes("SROC_GH_PROXY=http://host.docker.internal:8/https/api.github.com"));
+    assert.ok(!joined.includes("GH_TOKEN"));
+    assert.ok(!joined.includes("GITHUB_TOKEN"));
+    assert.ok(!joined.includes("DISCORD_TOKEN"));
+    assert.ok(!joined.includes("xai-"));
+    assert.ok(!joined.includes("gho_"));
   });
 });
 

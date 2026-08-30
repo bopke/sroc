@@ -9,7 +9,7 @@ import {
   type PartialMessageReaction,
   type PartialUser,
   type Sticker,
-  type TextBasedChannel,
+  type User,
 } from "discord.js";
 import { config } from "./config.js";
 import { isAlreadyPostedToValut, markAsPostedToValut } from "./db.js";
@@ -31,6 +31,16 @@ import {
   stripBotMention,
 } from "./conversation.js";
 import { formatIncomingContent } from "./discordContext.js";
+import { dockerBridgeAddress, startGithubProxy, startXaiProxy } from "./secret-proxy.js";
+
+const dockerGw = dockerBridgeAddress();
+const xaiProxy = await startXaiProxy({
+  bindHost: dockerGw,
+  bearerToken: config.grokApiKey,
+});
+const githubProxy = config.githubToken
+  ? await startGithubProxy({ bindHost: dockerGw, bearerToken: config.githubToken })
+  : undefined;
 
 const client = new Client({
   intents: [
@@ -56,13 +66,14 @@ const grok = new GrokBuildClient({
   isolateSettings: {
     image: config.grokIsolateImage,
     repoUrl: config.grokRepoUrl,
-    githubToken: config.githubToken,
     gitUserName: config.gitUserName,
     gitUserEmail: config.gitUserEmail,
     memory: config.grokIsolateMemory,
     cpus: config.grokIsolateCpus,
     pidsLimit: 256,
     cloneRepo: config.grokIsolateClone,
+    xaiProxyUrl: `http://host.docker.internal:${xaiProxy.port}`,
+    githubProxyUrl: githubProxy ? `http://host.docker.internal:${githubProxy.port}` : undefined,
   },
   noPlan: config.grokNoPlan,
   noSubagents: config.grokNoSubagents,
@@ -367,7 +378,7 @@ client.on(Events.MessageCreate, async (message) => {
 
 async function handleGoldReaction(
   reaction: MessageReaction | PartialMessageReaction,
-  user: PartialUser,
+  user: User | PartialUser,
 ) {
   if (!config.valutChannelId) return;
 
@@ -382,7 +393,7 @@ async function handleGoldReaction(
   }
   if (user.partial) {
     try {
-      user = (await user.fetch()) as PartialUser;
+      user = await user.fetch();
     } catch (error) {
       console.error("Failed to fetch user:", error);
       return;
@@ -423,8 +434,12 @@ async function handleGoldReaction(
       return;
     }
 
-    // 1:1 copy of the original message (content + embeds + attachments + stickers etc.)
-    const posted = await (valutChannel as TextBasedChannel).send({
+    if (!valutChannel.isSendable()) {
+      console.error("VALUT_CHANNEL_ID is not sendable");
+      return;
+    }
+
+    const posted = await valutChannel.send({
       content: message.content || undefined,
       embeds: message.embeds,
       files: message.attachments.map((a) => a.url),
@@ -442,7 +457,7 @@ async function handleGoldReaction(
 // Listen for reactions
 client.on(Events.MessageReactionAdd, async (reaction, user) => {
   if (user.bot) return;
-  void handleGoldReaction(reaction, user as PartialUser);
+  void handleGoldReaction(reaction, user);
 });
 
 client.login(config.token);

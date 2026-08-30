@@ -68,8 +68,9 @@ mounted. Throw a conversation away with `/isolate prune` (owner only).
 Build the image once: `npm run build-image`. Set `GROK_ISOLATE_CLONE=true`
 only if you want every new conversation to clone up front (slow).
 
-`GITHUB_TOKEN` authenticates `git` and `gh` inside the container (the bot
-GitHub account). The agent can clone a repo, push a branch, and `gh pr create`.
+`GITHUB_TOKEN` stays on the host. The container reaches GitHub only through a
+docker-bridge proxy (git `insteadOf` + a tokenless `gh` wrapper), same idea as
+the xAI proxy. `env` / `cat ~/.config/gh` cannot print the real token.
 
 To make commits appear under your GitHub account **as "Bopke"** (with the green "verified" badge),
 the bot now defaults to:
