@@ -61,4 +61,5 @@ export const config = {
   grokNoPlan: boolEnv("GROK_NO_PLAN", true),
   grokNoSubagents: boolEnv("GROK_NO_SUBAGENTS", true),
   grokEffort: process.env.GROK_EFFORT ?? "low",
+  valutChannelId: optionalEnv("VALUT_CHANNEL_ID"),
 };
