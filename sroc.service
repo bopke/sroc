@@ -20,6 +20,7 @@ Type=simple
 WorkingDirectory=/root/sroc
 EnvironmentFile=/root/sroc/.env
 Environment=NODE_ENV=production
+Environment=HOME=/root
 Environment=PATH=/root/.grok/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/usr/bin/node dist/index.js
 Restart=always

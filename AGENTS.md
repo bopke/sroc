@@ -91,6 +91,11 @@ TypeScript (`dist/` is gitignored). Do not add `ExecStartPre` rebuilds; `/deploy
 is the intended path. Deploy-commands is best-effort: a failure is reported but
 the process still restarts after a successful build.
 
+systemd system units often omit `HOME`. Git then cannot read `~/.gitconfig` (the
+`gh` credential helper) and HTTPS pulls fail with "terminal prompts disabled".
+`commandEnv()` always sets `HOME` to `os.homedir()`. Keep `Environment=HOME=`
+in `sroc.service` as well.
+
 ## Invariants — do not break these
 
 - **One guild.** Ignore DMs and any guild other than `config.guildId`.

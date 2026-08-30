@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -20,13 +21,22 @@ export function clipLog(text: string, max = LOG_LIMIT): string {
   return `…${trimmed.slice(-(max - 1))}`;
 }
 
+/** systemd system units often omit HOME, which hides ~/.gitconfig and gh auth. */
+export function commandEnv(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    HOME: homedir(),
+    GIT_TERMINAL_PROMPT: "0",
+  };
+}
+
 async function run(bin: string, args: string[], cwd: string): Promise<string> {
   try {
     const { stdout, stderr } = await execFileAsync(bin, args, {
       cwd,
       timeout: STEP_TIMEOUT_MS,
       maxBuffer: 10 * 1024 * 1024,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      env: commandEnv(),
     });
     return [stdout, stderr]
       .filter((part) => part && part.trim())
