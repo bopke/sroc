@@ -39,6 +39,13 @@ export function openDatabase(path: string): DB {
       channel_id TEXT NOT NULL,
       message_id TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS valut_posts (
+      message_id TEXT PRIMARY KEY,
+      valut_message_id TEXT,
+      channel_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
   `);
   ensureColumn(db, "messages", "grok_session_id", "TEXT");
   ensureColumn(db, "messages", "workspace_id", "TEXT");
@@ -171,6 +178,25 @@ export function takeDeployNotice(db: DB): DeployNotice | undefined {
     db.prepare("DELETE FROM deploy_notice WHERE id = 1").run();
     return row;
   })();
+}
+
+export function isAlreadyPostedToValut(db: DB, messageId: string): boolean {
+  const row = db
+    .prepare("SELECT 1 FROM valut_posts WHERE message_id = ?")
+    .get(messageId);
+  return !!row;
+}
+
+export function markAsPostedToValut(
+  db: DB,
+  messageId: string,
+  channelId: string,
+  valutMessageId?: string,
+): void {
+  db.prepare(
+    `INSERT INTO valut_posts (message_id, channel_id, valut_message_id, created_at)
+     VALUES (?, ?, ?, ?)`,
+  ).run(messageId, channelId, valutMessageId ?? null, Date.now());
 }
 
 export function insertMessage(db: DB, row: Omit<MessageRow, "created_at">): MessageRow {

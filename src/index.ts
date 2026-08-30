@@ -1,5 +1,16 @@
-import { Client, Collection, Events, GatewayIntentBits, Partials, type Message } from "discord.js";
+import {
+  Client,
+  Collection,
+  Events,
+  GatewayIntentBits,
+  Partials,
+  type Message,
+  type MessageReaction,
+  type PartialMessageReaction,
+  type PartialUser,
+} from "discord.js";
 import { config } from "./config.js";
+import { isAlreadyPostedToValut, markAsPostedToValut } from "./db.js";
 import { commands } from "./commands/index.js";
 import type { Command } from "./types.js";
 import {
@@ -352,6 +363,84 @@ client.on(Events.MessageCreate, async (message) => {
     working.stop();
     clearInterval(typing);
   }
+});
+
+async function handleGoldReaction(reaction: MessageReaction | PartialMessageReaction, user: PartialUser) {
+  if (!config.valutChannelId) return;
+
+  // Fetch full objects if partial
+  if (reaction.partial) {
+    try {
+      reaction = await reaction.fetch();
+    } catch (error) {
+      console.error("Failed to fetch reaction:", error);
+      return;
+    }
+  }
+  if (user.partial) {
+    try {
+      user = await user.fetch();
+    } catch (error) {
+      console.error("Failed to fetch user:", error);
+      return;
+    }
+  }
+
+  const emojiName = reaction.emoji.name?.toLowerCase() || "";
+  if (!emojiName.includes("gold")) return;
+
+  const message = reaction.message;
+  if (message.partial) {
+    try {
+      await message.fetch();
+    } catch {
+      return;
+    }
+  }
+
+  // Only react to own messages (bot's or user's own in the guild)
+  if (message.author.id !== client.user?.id && message.author.id !== user.id) {
+    return;
+  }
+
+  if (isAlreadyPostedToValut(db, message.id)) {
+    console.log(`Message ${message.id} already posted to valut`);
+    return;
+  }
+
+  const count = reaction.count ?? 0;
+  if (count < 3) return;
+
+  console.log(`Gold reaction detected on message ${message.id} (${count} reactions)`);
+
+  try {
+    const valutChannel = await client.channels.fetch(config.valutChannelId);
+    if (!valutChannel?.isTextBased()) {
+      console.error("VALUT_CHANNEL_ID is not a text channel");
+      return;
+    }
+
+    const link = `https://discord.com/channels/${message.guildId || "@me"}/${message.channelId}/${message.id}`;
+    const content = message.content
+      ? `${message.content}\n\n**Źródło:** ${link} (3x :${emojiName}:)`
+      : `**Wiadomość z 3x gold** ${link}`;
+
+    const posted = await valutChannel.send({
+      content,
+      allowedMentions: { parse: [] },
+    });
+
+    markAsPostedToValut(db, message.id, message.channelId, posted.id);
+    console.log(`Posted to valut: ${posted.id}`);
+  } catch (error) {
+    console.error("Failed to post to valut channel:", error);
+  }
+}
+
+// Listen for reactions
+client.on(Events.MessageReactionAdd, async (reaction, user) => {
+  if (user.bot) return;
+  void handleGoldReaction(reaction, user);
 });
 
 client.login(config.token);
