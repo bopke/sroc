@@ -14,7 +14,8 @@ export function openDatabase(path: string): DB {
       content TEXT NOT NULL,
       changed_by_id TEXT NOT NULL,
       changed_by_tag TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      scope TEXT NOT NULL DEFAULT 'guild' CHECK (scope IN ('guild', 'dm'))
     );
 
     CREATE TABLE IF NOT EXISTS messages (
@@ -33,6 +34,7 @@ export function openDatabase(path: string): DB {
     CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_message_id);
   `);
   ensureColumn(db, "messages", "grok_session_id", "TEXT");
+  ensureColumn(db, "system_prompts", "scope", "TEXT NOT NULL DEFAULT 'guild'");
   return db;
 }
 
@@ -54,12 +56,19 @@ function defaultDbPath(): string {
 
 export const db = openDatabase(defaultDbPath());
 
+export type PromptScope = "guild" | "dm";
+
+export function promptScope(guildId: string | null | undefined): PromptScope {
+  return guildId ? "guild" : "dm";
+}
+
 export interface SystemPromptRow {
   id: number;
   content: string;
   changed_by_id: string;
   changed_by_tag: string;
   created_at: number;
+  scope: PromptScope;
 }
 
 export interface MessageRow {
@@ -75,9 +84,13 @@ export interface MessageRow {
   created_at: number;
 }
 
-export function getCurrentSystemPrompt(db: DB): SystemPromptRow | undefined {
-  return db.prepare("SELECT * FROM system_prompts ORDER BY id DESC LIMIT 1").get() as
-    SystemPromptRow | undefined;
+export function getCurrentSystemPrompt(
+  db: DB,
+  scope: PromptScope = "guild",
+): SystemPromptRow | undefined {
+  return db
+    .prepare("SELECT * FROM system_prompts WHERE scope = ? ORDER BY id DESC LIMIT 1")
+    .get(scope) as SystemPromptRow | undefined;
 }
 
 export function getSystemPromptById(db: DB, id: number): SystemPromptRow | undefined {
@@ -90,19 +103,32 @@ export function insertSystemPrompt(
   content: string,
   changedById: string,
   changedByTag: string,
+  scope: PromptScope = "guild",
 ): SystemPromptRow {
   const result = db
     .prepare(
-      "INSERT INTO system_prompts (content, changed_by_id, changed_by_tag, created_at) VALUES (?, ?, ?, ?)",
+      "INSERT INTO system_prompts (content, changed_by_id, changed_by_tag, created_at, scope) VALUES (?, ?, ?, ?, ?)",
     )
-    .run(content, changedById, changedByTag, Date.now());
+    .run(content, changedById, changedByTag, Date.now(), scope);
   return getSystemPromptById(db, Number(result.lastInsertRowid))!;
 }
 
-export function listSystemPrompts(db: DB, limit: number): SystemPromptRow[] {
+export function listSystemPrompts(
+  db: DB,
+  limit: number,
+  scope: PromptScope = "guild",
+): SystemPromptRow[] {
   return db
-    .prepare("SELECT * FROM system_prompts ORDER BY id DESC LIMIT ?")
-    .all(limit) as SystemPromptRow[];
+    .prepare("SELECT * FROM system_prompts WHERE scope = ? ORDER BY id DESC LIMIT ?")
+    .all(scope, limit) as SystemPromptRow[];
+}
+
+export function getLatestAssistantInChannel(db: DB, channelId: string): MessageRow | undefined {
+  return db
+    .prepare(
+      "SELECT * FROM messages WHERE channel_id = ? AND role = 'assistant' ORDER BY created_at DESC LIMIT 1",
+    )
+    .get(channelId) as MessageRow | undefined;
 }
 
 export function getMessage(db: DB, messageId: string): MessageRow | undefined {

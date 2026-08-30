@@ -12,6 +12,7 @@ A Discord bot written in TypeScript using [discord.js](https://discord.js.org/),
    DISCORD_TOKEN=
    DISCORD_CLIENT_ID=
    DISCORD_GUILD_ID=      # required — the single guild the bot operates in
+   OWNER_ID=              # required — only this user can talk to the bot in DMs
    XAI_API_KEY=           # from https://console.x.ai (GROK_API_KEY still accepted)
    GROK_MODEL=grok-build  # optional; "default" uses the CLI's configured model
    ```
@@ -56,7 +57,8 @@ A Discord bot written in TypeScript using [discord.js](https://discord.js.org/),
    rebuilds, and restarts. A bare `systemctl restart sroc` does not pick up
    source changes.
 
-The bot only responds in the guild configured via `DISCORD_GUILD_ID` and never in DMs.
+The bot only responds in the guild configured via `DISCORD_GUILD_ID`, and in
+DMs with `OWNER_ID`. Other DMs are ignored.
 
 `GROK_ALWAYS_APPROVE=true` means the agent can run tools (read/edit/run) without
 asking. The default `GROK_SANDBOX=workspace` still limits writes to the working
@@ -64,10 +66,14 @@ directory. Point `GROK_CWD` at the repo you want it to work in.
 
 ## Chatting with the bot
 
-- **@mention the bot** in a message to start a new Grok Build session.
-- **Reply to one of the bot's messages** to continue that session. Anyone can
-  reply; if multiple people reply to the same bot message, each reply forks a
-  new session that shares history up to that point.
+- **@mention the bot** in a guild message to start a new Grok Build session.
+- **Reply to one of the bot's messages** to continue that session. Anyone in the
+  guild can reply; if multiple people reply to the same bot message, each reply
+  forks a new session that shares history up to that point.
+- **DMs with the owner** (`OWNER_ID`) are also handled. A normal DM continues
+  the latest session in that DM; @mention the bot there to start a new one.
+  Everyone else's DMs get no response. Guild and DM `/systemprompt` stores are
+  separate.
 - Discord message ids and Grok session ids are stored in `data/bot.db`
   (SQLite, gitignored). Conversation history itself lives in Grok Build sessions.
 - Ask it to inspect or change code in `GROK_CWD` — it has the same tools as

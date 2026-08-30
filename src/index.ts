@@ -1,13 +1,13 @@
-import { Client, Collection, Events, GatewayIntentBits, type Message } from "discord.js";
+import { Client, Collection, Events, GatewayIntentBits, Partials, type Message } from "discord.js";
 import { config } from "./config.js";
 import { commands } from "./commands/index.js";
 import type { Command } from "./types.js";
-import { db, getCurrentSystemPrompt, insertMessage } from "./db.js";
+import { db, getCurrentSystemPrompt, insertMessage, promptScope } from "./db.js";
 import { GrokBuildClient, type GrokStreamEvent } from "./grok.js";
 import {
   buildSessionRules,
-  getResumeSessionId,
-  isTrackedAssistantMessage,
+  isAllowedSource,
+  resolveChatTarget,
   stripBotMention,
 } from "./conversation.js";
 import { formatIncomingContent } from "./discordContext.js";
@@ -16,8 +16,10 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.DirectMessages,
     GatewayIntentBits.MessageContent,
   ],
+  partials: [Partials.Channel],
 });
 
 const grok = new GrokBuildClient({
@@ -81,6 +83,16 @@ client.once(Events.ClientReady, (readyClient) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
+  if (
+    !isAllowedSource({
+      guildId: interaction.guildId,
+      authorId: interaction.user.id,
+      configuredGuildId: config.guildId,
+      ownerId: config.ownerId,
+    })
+  ) {
+    return;
+  }
 
   const command = commandsByName.get(interaction.commandName);
   if (!command) {
@@ -103,9 +115,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
-  if (!message.guild || message.guild.id !== config.guildId) return;
+  if (
+    !isAllowedSource({
+      guildId: message.guildId,
+      authorId: message.author.id,
+      configuredGuildId: config.guildId,
+      ownerId: config.ownerId,
+    })
+  ) {
+    return;
+  }
   if (!message.channel.isSendable()) return;
   if (!client.user) return;
+
+  const isDm = !message.guild;
 
   if (message.content.startsWith(COMMAND_PREFIX)) {
     const [token, ...args] = message.content.slice(COMMAND_PREFIX.length).trim().split(/\s+/);
@@ -121,18 +144,15 @@ client.on(Events.MessageCreate, async (message) => {
     }
   }
 
-  const repliedToId = message.reference?.messageId;
-  let parentMessageId: string | null;
-  let resumeSessionId: string | null = null;
+  const target = resolveChatTarget(db, {
+    repliedToId: message.reference?.messageId,
+    mentionedBot: message.mentions.has(client.user),
+    isDm,
+    channelId: message.channelId,
+  });
+  if (!target) return;
 
-  if (repliedToId && isTrackedAssistantMessage(db, repliedToId)) {
-    parentMessageId = repliedToId;
-    resumeSessionId = getResumeSessionId(db, repliedToId);
-  } else if (message.mentions.has(client.user)) {
-    parentMessageId = null;
-  } else {
-    return;
-  }
+  const { parentMessageId, resumeSessionId } = target;
 
   const strippedText = stripBotMention(message.content, client.user.id);
   if (!strippedText && message.attachments.size === 0 && message.embeds.length === 0) return;
@@ -147,10 +167,13 @@ client.on(Events.MessageCreate, async (message) => {
     strippedText,
   );
 
-  const channelName = message.guild.channels.cache.get(message.channelId)?.name;
+  const scope = promptScope(message.guildId);
+  const channelName = message.guild?.channels.cache.get(message.channelId)?.name;
   const isNewSession = !resumeSessionId;
   const rules = isNewSession
-    ? buildSessionRules(getCurrentSystemPrompt(db)?.content ?? null, channelName)
+    ? buildSessionRules(getCurrentSystemPrompt(db, scope)?.content ?? null, channelName, {
+        dm: isDm,
+      })
     : null;
 
   const status = await message.reply("-# Working...");
@@ -186,7 +209,8 @@ client.on(Events.MessageCreate, async (message) => {
       role: "user",
       content,
       summary: null,
-      system_prompt_id: parentMessageId === null ? (getCurrentSystemPrompt(db)?.id ?? null) : null,
+      system_prompt_id:
+        parentMessageId === null ? (getCurrentSystemPrompt(db, scope)?.id ?? null) : null,
       grok_session_id: null,
     });
 

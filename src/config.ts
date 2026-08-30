@@ -41,6 +41,7 @@ export const config = {
   token: requireEnv("DISCORD_TOKEN"),
   clientId: requireEnv("DISCORD_CLIENT_ID"),
   guildId: requireEnv("DISCORD_GUILD_ID"),
+  ownerId: requireEnv("OWNER_ID"),
   grokApiKey: requireGrokApiKey(),
   grokModel: process.env.GROK_MODEL ?? "grok-build",
   grokBin: process.env.GROK_BIN ?? "grok",

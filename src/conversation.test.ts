@@ -4,7 +4,9 @@ import { insertMessage, insertSystemPrompt, openDatabase, type DB, type MessageR
 import {
   buildSessionRules,
   getResumeSessionId,
+  isAllowedSource,
   isTrackedAssistantMessage,
+  resolveChatTarget,
   stripBotMention,
 } from "./conversation.js";
 
@@ -20,13 +22,17 @@ function addMessage(
   parentId: string | null,
   role: MessageRow["role"],
   content: string,
-  extras: { systemPromptId?: number | null; grokSessionId?: string | null } = {},
+  extras: {
+    systemPromptId?: number | null;
+    grokSessionId?: string | null;
+    channelId?: string;
+  } = {},
 ): string {
   const id = nextId();
   insertMessage(db, {
     message_id: id,
     parent_message_id: parentId,
-    channel_id: "channel-1",
+    channel_id: extras.channelId ?? "channel-1",
     author_id: role === "user" ? "user-1" : "bot-1",
     role,
     content,
@@ -104,5 +110,108 @@ describe("buildSessionRules", () => {
     const rules = buildSessionRules(null, undefined);
     assert.match(rules, /#unknown/);
     assert.doesNotMatch(rules, /null/);
+  });
+
+  it("describes a DM instead of a channel when dm is set", () => {
+    const rules = buildSessionRules("Be brief.", undefined, { dm: true });
+    assert.match(rules, /DM/);
+    assert.doesNotMatch(rules, /#unknown/);
+    assert.match(rules, /Be brief\./);
+  });
+});
+
+describe("isAllowedSource", () => {
+  const ids = {
+    configuredGuildId: "guild-1",
+    ownerId: "owner-1",
+  };
+
+  it("allows the configured guild", () => {
+    assert.equal(isAllowedSource({ ...ids, guildId: "guild-1", authorId: "anyone" }), true);
+  });
+
+  it("rejects other guilds", () => {
+    assert.equal(isAllowedSource({ ...ids, guildId: "guild-2", authorId: "owner-1" }), false);
+  });
+
+  it("allows DMs from the owner only", () => {
+    assert.equal(isAllowedSource({ ...ids, guildId: null, authorId: "owner-1" }), true);
+    assert.equal(isAllowedSource({ ...ids, guildId: null, authorId: "stranger" }), false);
+  });
+});
+
+describe("resolveChatTarget", () => {
+  it("ignores guild messages that are not a mention or a reply to the bot", () => {
+    assert.equal(
+      resolveChatTarget(db, {
+        repliedToId: undefined,
+        mentionedBot: false,
+        isDm: false,
+        channelId: "channel-1",
+      }),
+      null,
+    );
+  });
+
+  it("starts a new conversation on mention", () => {
+    assert.deepEqual(
+      resolveChatTarget(db, {
+        repliedToId: undefined,
+        mentionedBot: true,
+        isDm: false,
+        channelId: "channel-1",
+      }),
+      { parentMessageId: null, resumeSessionId: null },
+    );
+  });
+
+  it("starts a new DM conversation when there is no prior assistant message", () => {
+    assert.deepEqual(
+      resolveChatTarget(db, {
+        repliedToId: undefined,
+        mentionedBot: false,
+        isDm: true,
+        channelId: "dm-1",
+      }),
+      { parentMessageId: null, resumeSessionId: null },
+    );
+  });
+
+  it("continues the latest assistant in a DM when the user does not reply or mention", () => {
+    const user = addMessage(null, "user", "hi", { channelId: "dm-1" });
+    const assistant = addMessage(user, "assistant", "hello", {
+      channelId: "dm-1",
+      grokSessionId: "sess-dm",
+    });
+    addMessage(assistant, "user", "other channel", { channelId: "dm-2" });
+    addMessage(null, "assistant", "elsewhere", {
+      channelId: "dm-2",
+      grokSessionId: "sess-other",
+    });
+
+    assert.deepEqual(
+      resolveChatTarget(db, {
+        repliedToId: undefined,
+        mentionedBot: false,
+        isDm: true,
+        channelId: "dm-1",
+      }),
+      { parentMessageId: assistant, resumeSessionId: "sess-dm" },
+    );
+  });
+
+  it("starts a new DM conversation when the owner mentions the bot", () => {
+    const user = addMessage(null, "user", "hi", { channelId: "dm-1" });
+    addMessage(user, "assistant", "hello", { channelId: "dm-1", grokSessionId: "sess-dm" });
+
+    assert.deepEqual(
+      resolveChatTarget(db, {
+        repliedToId: undefined,
+        mentionedBot: true,
+        isDm: true,
+        channelId: "dm-1",
+      }),
+      { parentMessageId: null, resumeSessionId: null },
+    );
   });
 });

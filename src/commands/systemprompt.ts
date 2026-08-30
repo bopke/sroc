@@ -1,6 +1,13 @@
 import { SlashCommandBuilder } from "discord.js";
 import type { Command } from "../types.js";
-import { db, getCurrentSystemPrompt, insertSystemPrompt, listSystemPrompts } from "../db.js";
+import {
+  db,
+  getCurrentSystemPrompt,
+  insertSystemPrompt,
+  listSystemPrompts,
+  promptScope,
+  type PromptScope,
+} from "../db.js";
 
 const MAX_HISTORY = 20;
 const DEFAULT_HISTORY_COUNT = 5;
@@ -10,25 +17,32 @@ function truncate(text: string, length: number): string {
   return text.length > length ? `${text.slice(0, length)}…` : text;
 }
 
-function formatView(): string {
-  const current = getCurrentSystemPrompt(db);
-  return current ? current.content : "No system prompt is currently set.";
+function scopeLabel(scope: PromptScope): string {
+  return scope === "dm" ? "DM" : "guild";
 }
 
-function formatSet(text: string, userId: string, userTag: string): string {
-  const previous = getCurrentSystemPrompt(db);
-  insertSystemPrompt(db, text, userId, userTag);
+function formatView(scope: PromptScope): string {
+  const current = getCurrentSystemPrompt(db, scope);
+  if (!current) return `No ${scopeLabel(scope)} system prompt is currently set.`;
+  return current.content;
+}
+
+function formatSet(text: string, userId: string, userTag: string, scope: PromptScope): string {
+  const previous = getCurrentSystemPrompt(db, scope);
+  insertSystemPrompt(db, text, userId, userTag, scope);
   return (
-    `**System prompt updated by ${userTag}**\n` +
+    `**${scopeLabel(scope)} system prompt updated by ${userTag}**\n` +
     `Previous: ${previous ? truncate(previous.content, PREVIEW_LENGTH) : "*none*"}\n` +
     `New: ${truncate(text, PREVIEW_LENGTH)}\n` +
     `-# This only affects conversations started from now on.`
   );
 }
 
-function formatHistory(count: number): string {
-  const entries = listSystemPrompts(db, count);
-  if (entries.length === 0) return "No system prompt changes recorded yet.";
+function formatHistory(count: number, scope: PromptScope): string {
+  const entries = listSystemPrompts(db, count, scope);
+  if (entries.length === 0) {
+    return `No ${scopeLabel(scope)} system prompt changes recorded yet.`;
+  }
 
   return entries
     .map((entry) => {
@@ -74,29 +88,31 @@ export const systemprompt: Command = {
         ),
     ),
   async execute(interaction) {
+    const scope = promptScope(interaction.guildId);
     const subcommand = interaction.options.getSubcommand();
 
     if (subcommand === "view") {
-      await interaction.reply({ content: formatView(), ephemeral: true });
+      await interaction.reply({ content: formatView(scope), ephemeral: true });
       return;
     }
 
     if (subcommand === "set") {
       const text = interaction.options.getString("text", true);
-      await interaction.reply(formatSet(text, interaction.user.id, interaction.user.tag));
+      await interaction.reply(formatSet(text, interaction.user.id, interaction.user.tag, scope));
       return;
     }
 
     if (subcommand === "history") {
       const count = interaction.options.getInteger("count") ?? DEFAULT_HISTORY_COUNT;
-      await interaction.reply({ content: formatHistory(count), ephemeral: true });
+      await interaction.reply({ content: formatHistory(count, scope), ephemeral: true });
     }
   },
   async runText(message, args) {
+    const scope = promptScope(message.guildId);
     const [subcommand, ...rest] = args;
 
     if (subcommand === "view") {
-      await message.reply(formatView());
+      await message.reply(formatView(scope));
       return;
     }
 
@@ -106,12 +122,12 @@ export const systemprompt: Command = {
         await message.reply("Usage: `$systemprompt set <text>`");
         return;
       }
-      await message.reply(formatSet(text, message.author.id, message.author.tag));
+      await message.reply(formatSet(text, message.author.id, message.author.tag, scope));
       return;
     }
 
     if (subcommand === "history") {
-      await message.reply(formatHistory(clampHistoryCount(rest[0])));
+      await message.reply(formatHistory(clampHistoryCount(rest[0]), scope));
       return;
     }
 

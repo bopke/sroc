@@ -32,7 +32,7 @@ install or enable the unit as part of a code change.
 
 Do not commit `.env`, `data/`, `workspace/`, or `dist/`. Copy `.env.example` for
 local credentials. Required: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`,
-`DISCORD_GUILD_ID`, and `XAI_API_KEY` (or `GROK_API_KEY`). Optional: `GROK_MODEL`
+`DISCORD_GUILD_ID`, `OWNER_ID`, and `XAI_API_KEY` (or `GROK_API_KEY`). Optional: `GROK_MODEL`
 (default `grok-build`; `default` omits `-m` so the CLI uses its configured
 model), `GROK_BIN`, `GROK_CWD` (default `./workspace`),
 `GROK_ALWAYS_APPROVE` (default true), `GROK_SANDBOX` (default `workspace`),
@@ -63,7 +63,7 @@ commit `.env`, `data/`, `workspace/`, or `dist/`.
 | `src/discordContext.ts`  | Format incoming Discord messages as plain text for Grok                       |
 | `src/commands/`          | One file per command; register in `src/commands/index.ts`                     |
 | `src/types.ts`           | `Command` interface (`data`, `execute`, `runText`)                            |
-| `src/deploy-commands.ts` | Guild-scoped slash command deploy                                             |
+| `src/deploy-commands.ts` | Guild + global slash command deploy (global is for owner DMs)                 |
 | `sroc.service`           | systemd unit; operator symlinks into `/etc/systemd/system/`                   |
 
 ## Conventions
@@ -98,12 +98,13 @@ in `sroc.service` as well.
 
 ## Invariants — do not break these
 
-- **One guild.** Ignore DMs and any guild other than `config.guildId`.
-- **Triggers.** Reply to a tracked _assistant_ message → continue that branch (`parent_message_id` = that id, resume its `grok_session_id`). Else `@mention` the bot → new root (`parent_message_id` null, new Grok session). Else ignore. A mention on a continue-reply is just text, not a new conversation.
+- **One guild + owner DMs.** Ignore any guild other than `config.guildId`. Ignore DMs unless `author.id === config.ownerId`. Other users' DMs get no response (including slash commands — do not reply).
+- **Triggers.** Reply to a tracked _assistant_ message → continue that branch (`parent_message_id` = that id, resume its `grok_session_id`). Else `@mention` the bot → new root (`parent_message_id` null, new Grok session). Else ignore in guilds. In owner DMs, a non-reply non-mention continues the latest assistant in that DM channel (or starts new if none). A mention on a continue-reply is just text, not a new conversation.
+- **Prompt scopes.** `system_prompts.scope` is `guild` or `dm`. `/systemprompt` in a guild mutates guild; in a DM mutates dm. They must not leak. Use `getCurrentSystemPrompt(db, promptScope(guildId))`.
 - **Tree, not thread.** Multiple replies to the same bot message are sibling branches. Always `--resume <parent session> --fork-session` so the parent session is not mutated.
 - **Grok Build owns history.** Send only the new user turn as `-p`. Do not rebuild a chat-completions message list. Do not call the OpenAI/xAI HTTP chat API.
 - **`--rules`, not `--system-prompt-override`.** Discord `/systemprompt` is extra rules on **new** sessions only. Overriding the system prompt would strip Grok Build's coding-agent instructions. In-flight sessions keep the rules they were created with.
-- **`system_prompt_id` only on roots** (Discord-side audit). `grok_session_id` only on assistant rows. Anyone may change the Discord system prompt — no permission gate.
+- **`system_prompt_id` only on roots** (Discord-side audit). `grok_session_id` only on assistant rows. Anyone in the guild may change the guild system prompt; only the owner can change the DM prompt (because only they can DM).
 - **Failed Grok run:** log, edit the `-# Working...` message to a short apology, **do not persist** the user or assistant node (retry-by-reply must land on the same valid parent).
 - **Long replies:** split on the nearest preceding newline at 2000 chars. The `-# Working...` reply is edited into the first chunk; later chunks are untracked channel messages. The last sent message id is the `assistant` row (the one a user must reply to in order to continue).
 - **Stored user content** is `formatIncomingContent(...)` output (`Speaker (@username): body`), with the bot mention stripped. Attachments/embeds are text notes (name/url/title), not file bytes.
