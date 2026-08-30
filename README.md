@@ -84,8 +84,8 @@ Do not pass `DISCORD_TOKEN` into containers.
 - Discord message ids and Grok session ids are stored in `data/bot.db`
   (SQLite, gitignored). Conversation history itself lives in Grok Build sessions.
 - Ask it to inspect or change code — that happens in the conversation's
-  container, not on the host. Long runs post a `-# Working...` status
-  (including the current tool) until the reply is ready.
+  container, not on the host. If a turn takes more than 10 seconds it posts
+  `-# Working...` (including the current tool); faster replies skip that.
 
 ## Deploy
 

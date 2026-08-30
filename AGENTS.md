@@ -109,8 +109,9 @@ in `sroc.service` as well.
 - **Grok Build owns history.** Send only the new user turn as `-p`. Do not rebuild a chat-completions message list. Do not call the OpenAI/xAI HTTP chat API.
 - **`--rules`, not `--system-prompt-override`.** Discord `/systemprompt` is extra rules on **new** sessions only. Overriding the system prompt would strip Grok Build's coding-agent instructions. In-flight sessions keep the rules they were created with.
 - **`system_prompt_id` only on roots** (Discord-side audit). `grok_session_id` only on assistant rows. Anyone in the guild may change the guild system prompt; only the owner can change the DM prompt (because only they can DM).
-- **Failed Grok run:** log, edit the `-# Working...` message to a short apology, **do not persist** the user or assistant node (retry-by-reply must land on the same valid parent).
-- **Long replies:** split on the nearest preceding newline at 2000 chars. The `-# Working...` reply is edited into the first chunk; later chunks are untracked channel messages. The last sent message id is the `assistant` row (the one a user must reply to in order to continue).
+- **Failed Grok run:** log, send a short apology, **do not persist** the user or assistant node (retry-by-reply must land on the same valid parent). If a `-# Working...` status exists, edit it; otherwise reply.
+- **Working status:** do not post `-# Working...` until the turn has been running for 10 seconds. Fast replies have no status message. If it is posted, tool titles may update it.
+- **Long replies:** split on the nearest preceding newline at 2000 chars. If a `-# Working...` reply exists, edit it into the first chunk; otherwise the last chunk is `message.reply(...)`. Later chunks are untracked channel messages. The last sent message id is the `assistant` row (the one a user must reply to in order to continue).
 - **Stored user content** is `formatIncomingContent(...)` output (`Speaker (@username): body`), with the bot mention stripped. Attachments/embeds are text notes (name/url/title), not file bytes.
 - **Legacy rows** with a null `grok_session_id` start a fresh Grok session (still parented in the Discord tree).
 - **Isolate by default.** Each conversation root gets a Docker container

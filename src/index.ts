@@ -55,6 +55,7 @@ const COMMAND_PREFIX = "$";
 const DISCORD_MESSAGE_LIMIT = 2000;
 const TYPING_INTERVAL_MS = 8000;
 const STATUS_EDIT_INTERVAL_MS = 2000;
+const WORKING_DELAY_MS = 10_000;
 
 function splitMessage(content: string, limit = DISCORD_MESSAGE_LIMIT): string[] {
   if (content.length <= limit) return [content];
@@ -78,17 +79,88 @@ function toolStatusText(event: GrokStreamEvent): string | null {
   return label ? `-# Working... ${label}` : "-# Working...";
 }
 
-async function deliverReply(status: Message, replyText: string): Promise<string> {
+async function deliverReply(
+  userMessage: Message,
+  status: Message | null,
+  replyText: string,
+): Promise<string> {
   const chunks = splitMessage(replyText);
-  await status.edit(chunks[0]);
-  let lastSentId = status.id;
-  const channel = status.channel;
-  if (!channel.isSendable()) return lastSentId;
-  for (let i = 1; i < chunks.length; i++) {
-    const sent = await channel.send(chunks[i]);
-    lastSentId = sent.id;
+  const channel = status?.channel ?? userMessage.channel;
+  if (!channel.isSendable()) {
+    throw new Error("Channel is not sendable");
   }
-  return lastSentId;
+
+  if (status) {
+    await status.edit(chunks[0]);
+    let lastSentId = status.id;
+    for (let i = 1; i < chunks.length; i++) {
+      const sent = await channel.send(chunks[i]);
+      lastSentId = sent.id;
+    }
+    return lastSentId;
+  }
+
+  let lastSentId: string | undefined;
+  for (let i = 0; i < chunks.length; i++) {
+    if (i === chunks.length - 1) {
+      const sent = await userMessage.reply(chunks[i]);
+      lastSentId = sent.id;
+    } else {
+      const sent = await channel.send(chunks[i]);
+      lastSentId = sent.id;
+    }
+  }
+  return lastSentId!;
+}
+
+function startWorkingStatus(userMessage: Message): {
+  onEvent: (event: GrokStreamEvent) => void;
+  getStatus: () => Message | null;
+  stop: () => void;
+} {
+  const startedAt = Date.now();
+  let status: Message | null = null;
+  let pending = "-# Working...";
+  let lastEdit = 0;
+  let cancelled = false;
+
+  const postOrEdit = async (text: string) => {
+    if (cancelled) return;
+    pending = text;
+    if (!status) {
+      const sent = await userMessage.reply(text).catch(() => null);
+      if (cancelled) {
+        await sent?.delete().catch(() => undefined);
+        return;
+      }
+      status = sent;
+      lastEdit = Date.now();
+      return;
+    }
+    const now = Date.now();
+    if (now - lastEdit < STATUS_EDIT_INTERVAL_MS) return;
+    lastEdit = now;
+    await status.edit(text).catch(() => undefined);
+  };
+
+  const timer = setTimeout(() => {
+    void postOrEdit(pending);
+  }, WORKING_DELAY_MS);
+
+  return {
+    onEvent(event) {
+      const text = toolStatusText(event);
+      if (!text) return;
+      pending = text;
+      if (Date.now() - startedAt < WORKING_DELAY_MS) return;
+      void postOrEdit(text);
+    },
+    getStatus: () => status,
+    stop() {
+      cancelled = true;
+      clearTimeout(timer);
+    },
+  };
 }
 
 client.once(Events.ClientReady, (readyClient) => {
@@ -193,23 +265,12 @@ client.on(Events.MessageCreate, async (message) => {
       })
     : null;
 
-  const status = await message.reply(
-    config.grokIsolate ? "-# Starting workspace..." : "-# Working...",
-  );
   const typing = setInterval(() => {
     message.channel.sendTyping().catch(() => undefined);
   }, TYPING_INTERVAL_MS);
   await message.channel.sendTyping().catch(() => undefined);
 
-  let lastStatusEdit = 0;
-  const onEvent = (event: GrokStreamEvent) => {
-    const text = toolStatusText(event);
-    if (!text) return;
-    const now = Date.now();
-    if (now - lastStatusEdit < STATUS_EDIT_INTERVAL_MS) return;
-    lastStatusEdit = now;
-    status.edit(text).catch(() => undefined);
-  };
+  const working = startWorkingStatus(message);
 
   try {
     const result = await grok.prompt({
@@ -218,7 +279,7 @@ client.on(Events.MessageCreate, async (message) => {
       fork: Boolean(resumeSessionId),
       rules,
       workspaceId,
-      onEvent,
+      onEvent: working.onEvent,
     });
 
     insertMessage(db, {
@@ -235,7 +296,8 @@ client.on(Events.MessageCreate, async (message) => {
       workspace_id: workspaceId,
     });
 
-    const lastSentId = await deliverReply(status, result.text);
+    working.stop();
+    const lastSentId = await deliverReply(message, working.getStatus(), result.text);
 
     insertMessage(db, {
       message_id: lastSentId,
@@ -251,10 +313,16 @@ client.on(Events.MessageCreate, async (message) => {
     });
   } catch (error) {
     console.error("Failed to handle chat message:", error);
-    await status
-      .edit("Sorry, I couldn't get a response from Grok just now. Please try again.")
-      .catch(() => undefined);
+    working.stop();
+    const apology = "Sorry, I couldn't get a response from Grok just now. Please try again.";
+    const status = working.getStatus();
+    if (status) {
+      await status.edit(apology).catch(() => undefined);
+    } else {
+      await message.reply(apology).catch(() => undefined);
+    }
   } finally {
+    working.stop();
     clearInterval(typing);
   }
 });
