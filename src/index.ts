@@ -8,6 +8,7 @@ import {
   type MessageReaction,
   type PartialMessageReaction,
   type PartialUser,
+  type Sticker,
 } from "discord.js";
 import { config } from "./config.js";
 import { isAlreadyPostedToValut, markAsPostedToValut } from "./db.js";
@@ -34,10 +35,11 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.MessageContent,
   ],
-  partials: [Partials.Channel],
+  partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
 });
 
 const grok = new GrokBuildClient({
@@ -379,7 +381,7 @@ async function handleGoldReaction(reaction: MessageReaction | PartialMessageReac
   }
   if (user.partial) {
     try {
-      user = await user.fetch();
+      user = await user.fetch() as unknown as PartialUser;
     } catch (error) {
       console.error("Failed to fetch user:", error);
       return;
@@ -399,7 +401,7 @@ async function handleGoldReaction(reaction: MessageReaction | PartialMessageReac
   }
 
   // Only react to own messages (bot's or user's own in the guild)
-  if (message.author.id !== client.user?.id && message.author.id !== user.id) {
+  if (!message.author || (message.author.id !== client.user?.id && message.author.id !== user.id)) {
     return;
   }
 
@@ -421,11 +423,11 @@ async function handleGoldReaction(reaction: MessageReaction | PartialMessageReac
     }
 
     // 1:1 copy of the original message (content + embeds + attachments + stickers etc.)
-    const posted = await valutChannel.send({
+    const posted = await (valutChannel as any).send({
       content: message.content || undefined,
       embeds: message.embeds,
       files: message.attachments.map((a) => a.url),
-      stickers: message.stickers,
+      stickers: message.stickers.map((s: Sticker) => s.id),
       allowedMentions: { parse: [] },
     });
 
@@ -438,8 +440,8 @@ async function handleGoldReaction(reaction: MessageReaction | PartialMessageReac
 
 // Listen for reactions
 client.on(Events.MessageReactionAdd, async (reaction, user) => {
-  if (user.bot) return;
-  void handleGoldReaction(reaction, user);
+  if ((user as any).bot) return;
+  void handleGoldReaction(reaction, user as PartialUser);
 });
 
 client.login(config.token);
