@@ -71,13 +71,13 @@ only if you want every new conversation to clone up front (slow).
 `GITHUB_TOKEN` authenticates `git` and `gh` inside the container (the bot
 GitHub account). The agent can clone a repo, push a branch, and `gh pr create`.
 
-To make commits appear under your GitHub account (with the green "verified" badge),
-set these environment variables:
+To make commits appear under your GitHub account **as "Bopke"** (with the green "verified" badge),
+the bot now defaults to:
 
-- `GIT_USER_NAME=bopke` (or your GitHub username)
-- `GIT_USER_EMAIL=your-email@users.noreply.github.com` (the noreply email associated with your GitHub account)
+- `GIT_USER_NAME=Bopke`
+- `GIT_USER_EMAIL=bot@bopke.dev`
 
-This sets both `GIT_AUTHOR_*` / `GIT_COMMITTER_*` and `git config user.name/email`.
+You can still override via environment variables. This sets both `GIT_AUTHOR_*` / `GIT_COMMITTER_*` env vars (used by Grok Build) and `git config user.name/email` inside containers.
 Do not pass `DISCORD_TOKEN` into containers.
 
 ## Chatting with the bot
