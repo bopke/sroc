@@ -5,3 +5,4 @@ dist
 workspace
 node_modules
 package-lock.json
+sroc.service

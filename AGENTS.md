@@ -84,6 +84,13 @@ commit `.env`, `data/`, `workspace/`, or `dist/`.
 
 `$` text-command replies are always public channel messages (Discord cannot make them ephemeral). Slash `view`/`history` for `/systemprompt` are ephemeral; `set` is public.
 
+`/deploy` (`src/commands/deploy.ts`) runs `git pull --ff-only`, `npm run build`,
+and `npm run deploy-commands` in the bot checkout, then `process.exit(0)` so
+systemd restarts the new `dist/`. A unit restart alone does not compile
+TypeScript (`dist/` is gitignored). Do not add `ExecStartPre` rebuilds; `/deploy`
+is the intended path. Deploy-commands is best-effort: a failure is reported but
+the process still restarts after a successful build.
+
 ## Invariants — do not break these
 
 - **One guild.** Ignore DMs and any guild other than `config.guildId`.

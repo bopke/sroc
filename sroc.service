@@ -5,6 +5,7 @@
 #   systemctl enable --now sroc
 #
 # Requires a production build (`npm run build`) and a filled-in `.env`.
+# Restart does not pull or rebuild — use the Discord /deploy command for that.
 # Edit WorkingDirectory / EnvironmentFile / PATH if this checkout is not /root/sroc.
 
 [Unit]

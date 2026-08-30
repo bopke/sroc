@@ -33,20 +33,28 @@ A Discord bot written in TypeScript using [discord.js](https://discord.js.org/),
    npm run deploy-commands
    ```
 5. Run the bot:
+
    ```
    npm run dev    # development, with auto-reload
    npm run build && npm start   # production
    ```
 
+   `systemctl restart sroc` only re-runs the existing `dist/` build. It does
+   **not** git pull or compile TypeScript. Use `/deploy` (or `$deploy`) to
+   pull, rebuild, and exit so systemd starts the new build.
+
    Or install the systemd unit from this checkout (edit paths in `sroc.service`
    first if the repo is not `/root/sroc`):
+
    ```
    ln -s /root/sroc/sroc.service /etc/systemd/system/sroc.service
    systemctl daemon-reload
    systemctl enable --now sroc
    ```
-   Logs: `journalctl -u sroc -f`. Rebuild with `npm run build` after code
-   changes, then `systemctl restart sroc`.
+
+   Logs: `journalctl -u sroc -f`. After the unit is running, `/deploy` pulls,
+   rebuilds, and restarts. A bare `systemctl restart sroc` does not pick up
+   source changes.
 
 The bot only responds in the guild configured via `DISCORD_GUILD_ID` and never in DMs.
 
@@ -65,6 +73,11 @@ directory. Point `GROK_CWD` at the repo you want it to work in.
 - Ask it to inspect or change code in `GROK_CWD` — it has the same tools as
   headless `grok -p`. Long runs post a `-# Working...` status (including the current
   tool) until the reply is ready.
+
+## Deploy
+
+- `/deploy` — `git pull --ff-only`, `npm run build`, register slash commands,
+  then exit so systemd (`Restart=always`) starts the new `dist/`. Also `$deploy`.
 
 ## System prompt
 
