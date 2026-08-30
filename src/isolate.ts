@@ -70,13 +70,19 @@ export function dockerRunArgs(containerName: string, settings: IsolateSettings):
 
 export const CONTAINER_XAI_PLACEHOLDER = "sroc-local";
 
+/** Grok's default is https://api.x.ai/v1; it appends /models, /responses, etc. */
+export function grokXaiApiBaseUrl(xaiProxyOrigin: string): string {
+  const origin = xaiProxyOrigin.replace(/\/$/, "");
+  return origin.endsWith("/v1") ? origin : `${origin}/v1`;
+}
+
 export function containerGrokConfig(xaiProxyUrl: string): string {
   return [
     "[cli]",
     "auto_update = false",
     "",
     "[endpoints]",
-    `xai_api_base_url = ${JSON.stringify(xaiProxyUrl)}`,
+    `xai_api_base_url = ${JSON.stringify(grokXaiApiBaseUrl(xaiProxyUrl))}`,
     "",
     "[shell_environment_policy]",
     'inherit = "core"',
@@ -97,7 +103,7 @@ export function dockerExecGrokArgs(
     "-e",
     `XAI_API_KEY=${CONTAINER_XAI_PLACEHOLDER}`,
     "-e",
-    `GROK_XAI_API_BASE_URL=${xaiProxyUrl}`,
+    `GROK_XAI_API_BASE_URL=${grokXaiApiBaseUrl(xaiProxyUrl)}`,
     "-e",
     "GIT_TERMINAL_PROMPT=0",
     "-e",
@@ -226,17 +232,19 @@ async function provision(containerName: string, settings: IsolateSettings): Prom
     for (const cmd of gitConfigCommands(settings.gitUserName, settings.gitUserEmail)) {
       await execIn(containerName, cmd);
     }
-    await execWithStdin(
-      containerName,
-      ["sh", "-c", "mkdir -p /home/node/.grok && cat > /home/node/.grok/config.toml"],
-      containerGrokConfig(settings.xaiProxyUrl),
-    );
-    if (settings.githubProxyUrl) {
-      for (const cmd of githubInsteadOfCommands(settings.githubProxyUrl)) {
-        await execIn(containerName, cmd);
-      }
-    }
     await execIn(containerName, ["sh", "-c", "touch /home/node/.sroc-provisioned"]);
+  }
+
+  // Proxy listen ports change every bot process; refresh on each ensure.
+  await execWithStdin(
+    containerName,
+    ["sh", "-c", "mkdir -p /home/node/.grok && cat > /home/node/.grok/config.toml"],
+    containerGrokConfig(settings.xaiProxyUrl),
+  );
+  if (settings.githubProxyUrl) {
+    for (const cmd of githubInsteadOfCommands(settings.githubProxyUrl)) {
+      await execIn(containerName, cmd);
+    }
   }
 
   if (!settings.cloneRepo) return;

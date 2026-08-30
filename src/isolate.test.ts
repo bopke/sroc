@@ -63,7 +63,7 @@ describe("dockerExecGrokArgs", () => {
     const joined = args.join(" ");
     assert.ok(args.includes("grok"));
     assert.ok(joined.includes("XAI_API_KEY=sroc-local"));
-    assert.ok(joined.includes("GROK_XAI_API_BASE_URL=http://host.docker.internal:9"));
+    assert.ok(joined.includes("GROK_XAI_API_BASE_URL=http://host.docker.internal:9/v1"));
     assert.ok(joined.includes("SROC_GH_PROXY=http://host.docker.internal:8/https/api.github.com"));
     assert.ok(!joined.includes("GH_TOKEN"));
     assert.ok(!joined.includes("GITHUB_TOKEN"));

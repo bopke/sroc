@@ -107,6 +107,8 @@ Do not put `XAI_API_KEY`, `GH_TOKEN`, `GITHUB_TOKEN`, or `DISCORD_TOKEN` in the
 container — not in env, not in `~/.config/gh`. xAI and GitHub HTTPS go through
 `src/secret-proxy.ts` on the docker bridge. Git uses `url.*.insteadOf` to the
 proxy; `gh` is `scripts/container-gh.mjs` (no token). Dummy `XAI_API_KEY=sroc-local`.
+Grok's `xai_api_base_url` / `GROK_XAI_API_BASE_URL` must be the proxy origin plus `/v1`
+(the CLI default is `https://api.x.ai/v1`; without it, grok hits `/models` and xAI 404s).
 Tool shells get `[shell_environment_policy] include_only`.
 
 ## Invariants — do not break these
@@ -128,13 +130,13 @@ Tool shells get `[shell_environment_policy] include_only`.
   repo on provision unless `GROK_ISOLATE_CLONE=true` — an empty workspace keeps
   simple chat fast. Tell Grok the repo URL in `--rules` so it can clone when
   the user asks for file/PR work. The bot now defaults to `GIT_USER_NAME=Bopke`
-  + `GIT_USER_EMAIL=bot@bopke.dev` (your dedicated bot account). Provision git
-  identity and `url.*.insteadOf` when `GITHUB_TOKEN` is set, so `gh pr create`
-  works. Do not mount the host checkout, `.env`, or
-  `data/`. Do not pass `DISCORD_TOKEN` into the container. Inner grok sandbox
-  is `off`; Docker is the isolation. Default `--no-plan`, `--no-subagents`,
-  `--effort low`. Copy `workspace_id` from the parent message; new roots use
-  the incoming Discord message id. `/isolate prune` (owner) is the removal path.
+  - `GIT_USER_EMAIL=bot@bopke.dev` (your dedicated bot account). Provision git
+    identity and `url.*.insteadOf` when `GITHUB_TOKEN` is set, so `gh pr create`
+    works. Do not mount the host checkout, `.env`, or
+    `data/`. Do not pass `DISCORD_TOKEN` into the container. Inner grok sandbox
+    is `off`; Docker is the isolation. Default `--no-plan`, `--no-subagents`,
+    `--effort low`. Copy `workspace_id` from the parent message; new roots use
+    the incoming Discord message id. `/isolate prune` (owner) is the removal path.
 
 ## Grok Build
 
