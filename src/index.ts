@@ -9,6 +9,7 @@ import {
   type PartialMessageReaction,
   type PartialUser,
   type Sticker,
+  type TextBasedChannel,
 } from "discord.js";
 import { config } from "./config.js";
 import { isAlreadyPostedToValut, markAsPostedToValut } from "./db.js";
@@ -367,7 +368,10 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-async function handleGoldReaction(reaction: MessageReaction | PartialMessageReaction, user: PartialUser) {
+async function handleGoldReaction(
+  reaction: MessageReaction | PartialMessageReaction,
+  user: PartialUser,
+) {
   if (!config.valutChannelId) return;
 
   // Fetch full objects if partial
@@ -381,7 +385,7 @@ async function handleGoldReaction(reaction: MessageReaction | PartialMessageReac
   }
   if (user.partial) {
     try {
-      user = await user.fetch() as unknown as PartialUser;
+      user = (await user.fetch()) as PartialUser;
     } catch (error) {
       console.error("Failed to fetch user:", error);
       return;
@@ -423,7 +427,7 @@ async function handleGoldReaction(reaction: MessageReaction | PartialMessageReac
     }
 
     // 1:1 copy of the original message (content + embeds + attachments + stickers etc.)
-    const posted = await (valutChannel as any).send({
+    const posted = await (valutChannel as TextBasedChannel).send({
       content: message.content || undefined,
       embeds: message.embeds,
       files: message.attachments.map((a) => a.url),
@@ -440,7 +444,7 @@ async function handleGoldReaction(reaction: MessageReaction | PartialMessageReac
 
 // Listen for reactions
 client.on(Events.MessageReactionAdd, async (reaction, user) => {
-  if ((user as any).bot) return;
+  if (user.bot) return;
   void handleGoldReaction(reaction, user as PartialUser);
 });
 
