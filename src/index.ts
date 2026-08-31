@@ -11,6 +11,8 @@ import {
   type Sticker,
   type User,
 } from "discord.js";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { config } from "./config.js";
 import { isAlreadyPostedToValut, markAsPostedToValut } from "./db.js";
 import { commands } from "./commands/index.js";
@@ -31,12 +33,24 @@ import {
   stripBotMention,
 } from "./conversation.js";
 import { formatIncomingContent } from "./discordContext.js";
+import { createGrokAuth } from "./grok-auth.js";
 import { dockerBridgeAddress, startGithubProxy, startXaiProxy } from "./secret-proxy.js";
+
+const grokAuth = createGrokAuth({
+  grokHome: process.env.GROK_HOME ?? join(homedir(), ".grok"),
+  apiKey: config.grokApiKey,
+});
+if (!grokAuth.hasAny()) {
+  throw new Error(
+    "No Grok credential. Run `grok login` on this host (SuperGrok) or set XAI_API_KEY.",
+  );
+}
+console.log(`Grok credential: ${grokAuth.label()}`);
 
 const dockerGw = dockerBridgeAddress();
 const xaiProxy = await startXaiProxy({
   bindHost: dockerGw,
-  bearerToken: config.grokApiKey,
+  getBearer: () => grokAuth.getBearer(),
 });
 const githubProxy = config.githubToken
   ? await startGithubProxy({ bindHost: dockerGw, bearerToken: config.githubToken })

@@ -32,7 +32,8 @@ install or enable the unit as part of a code change.
 
 Do not commit `.env`, `data/`, `workspace/`, or `dist/`. Copy `.env.example` for
 local credentials. Required: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`,
-`DISCORD_GUILD_ID`, `OWNER_ID`, and `XAI_API_KEY` (or `GROK_API_KEY`). Optional: `GROK_MODEL`
+`DISCORD_GUILD_ID`, `OWNER_ID`. Grok auth: `grok login` on the host (SuperGrok
+subscription) or `XAI_API_KEY` / `GROK_API_KEY` (console, pay-per-token). Optional: `GROK_MODEL`
 (default `grok-build`; `default` omits `-m` so the CLI uses its configured
 model), `GROK_BIN`, `GROK_CWD` (default `./workspace`),
 `GROK_ALWAYS_APPROVE` (default true), `GROK_SANDBOX` (default `workspace`; ignored
@@ -103,10 +104,12 @@ systemd system units often omit `HOME`. Git then cannot read `~/.gitconfig` (the
 `commandEnv()` always sets `HOME` to `os.homedir()`. Keep `Environment=HOME=`
 in `sroc.service` as well.
 
-Do not put `XAI_API_KEY`, `GH_TOKEN`, `GITHUB_TOKEN`, or `DISCORD_TOKEN` in the
-container — not in env, not in `~/.config/gh`. xAI and GitHub HTTPS go through
-`src/secret-proxy.ts` on the docker bridge. Git uses `url.*.insteadOf` to the
-proxy; `gh` is `scripts/container-gh.mjs` (no token). Dummy `XAI_API_KEY=sroc-local`.
+Do not put `XAI_API_KEY`, `GH_TOKEN`, `GITHUB_TOKEN`, `DISCORD_TOKEN`, or
+`~/.grok/auth.json` in the container. xAI and GitHub HTTPS go through
+`src/secret-proxy.ts` on the docker bridge. The xAI proxy prefers the host
+`grok login` session (SuperGrok) and falls back to `XAI_API_KEY`. Git uses
+`url.*.insteadOf` to the proxy; `gh` is `scripts/container-gh.mjs` (no token).
+Dummy `XAI_API_KEY=sroc-local` only so the inner CLI will start.
 Grok's `xai_api_base_url` / `GROK_XAI_API_BASE_URL` must be the proxy origin plus `/v1`
 (the CLI default is `https://api.x.ai/v1`; without it, grok hits `/models` and xAI 404s).
 Tool shells get `[shell_environment_policy] include_only`.
@@ -141,8 +144,9 @@ Tool shells get `[shell_environment_policy] include_only`.
 ## Grok Build
 
 `src/grok.ts` spawns `grok -p` (or `docker exec … grok -p` when isolated) with
-`--output-format streaming-json --verbatim`. Pass `XAI_API_KEY` and
-`GROK_DISABLE_AUTOUPDATER=1` into the grok process, not the whole host env into
-the container. Keep `GrokBuildClient.prompt` as the only runtime entry point.
+`--output-format streaming-json --verbatim`. Isolated grok gets dummy
+`XAI_API_KEY=sroc-local` and `GROK_DISABLE_AUTOUPDATER=1`; the host proxy
+injects the SuperGrok session (or console key). Keep `GrokBuildClient.prompt`
+as the only runtime entry point.
 
 Do not add the `openai` package back, and do not use `--system-prompt-override`.

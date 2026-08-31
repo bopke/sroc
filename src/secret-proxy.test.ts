@@ -42,7 +42,7 @@ describe("startXaiProxy", () => {
 
     const proxy = await startXaiProxy({
       bindHost: "127.0.0.1",
-      bearerToken: "real-secret",
+      getBearer: () => "real-secret",
       targetOrigin: `http://127.0.0.1:${upPort}`,
     });
 
