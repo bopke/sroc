@@ -1,6 +1,7 @@
 import { SlashCommandBuilder } from "discord.js";
 import type { Command } from "../types.js";
 import { config } from "../config.js";
+import { replyInteractionSplit, replyMessageSplit } from "../discordReply.js";
 import { listWorkspaces, pruneWorkspaces } from "../isolate.js";
 
 function isOwner(userId: string): boolean {
@@ -17,38 +18,40 @@ export const isolate: Command = {
     ),
   async execute(interaction) {
     if (!isOwner(interaction.user.id)) {
-      await interaction.reply({ content: "Only the owner can manage isolation.", ephemeral: true });
+      await replyInteractionSplit(interaction, "Only the owner can manage isolation.", {
+        ephemeral: true,
+      });
       return;
     }
     const sub = interaction.options.getSubcommand();
     await interaction.deferReply({ ephemeral: true });
     try {
       const result = sub === "prune" ? await pruneWorkspaces() : await listWorkspaces();
-      await interaction.editReply(result);
+      await replyInteractionSplit(interaction, result, { ephemeral: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await interaction.editReply(`Isolate failed.\n${message}`);
+      await replyInteractionSplit(interaction, `Isolate failed.\n${message}`, { ephemeral: true });
     }
   },
   async runText(message, args) {
     if (!isOwner(message.author.id)) {
-      await message.reply("Only the owner can manage isolation.");
+      await replyMessageSplit(message, "Only the owner can manage isolation.");
       return;
     }
     const sub = args[0] ?? "status";
     try {
       if (sub === "prune") {
-        await message.reply(await pruneWorkspaces());
+        await replyMessageSplit(message, await pruneWorkspaces());
         return;
       }
       if (sub === "status") {
-        await message.reply(await listWorkspaces());
+        await replyMessageSplit(message, await listWorkspaces());
         return;
       }
-      await message.reply("Usage: `$isolate <status|prune>`");
+      await replyMessageSplit(message, "Usage: `$isolate <status|prune>`");
     } catch (error) {
       const errMessage = error instanceof Error ? error.message : String(error);
-      await message.reply(`Isolate failed.\n${errMessage}`);
+      await replyMessageSplit(message, `Isolate failed.\n${errMessage}`);
     }
   },
 };

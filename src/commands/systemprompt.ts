@@ -1,5 +1,6 @@
 import { SlashCommandBuilder } from "discord.js";
 import type { Command } from "../types.js";
+import { replyInteractionSplit, replyMessageSplit } from "../discordReply.js";
 import {
   db,
   getCurrentSystemPrompt,
@@ -92,19 +93,22 @@ export const systemprompt: Command = {
     const subcommand = interaction.options.getSubcommand();
 
     if (subcommand === "view") {
-      await interaction.reply({ content: formatView(scope), ephemeral: true });
+      await replyInteractionSplit(interaction, formatView(scope), { ephemeral: true });
       return;
     }
 
     if (subcommand === "set") {
       const text = interaction.options.getString("text", true);
-      await interaction.reply(formatSet(text, interaction.user.id, interaction.user.tag, scope));
+      await replyInteractionSplit(
+        interaction,
+        formatSet(text, interaction.user.id, interaction.user.tag, scope),
+      );
       return;
     }
 
     if (subcommand === "history") {
       const count = interaction.options.getInteger("count") ?? DEFAULT_HISTORY_COUNT;
-      await interaction.reply({ content: formatHistory(count, scope), ephemeral: true });
+      await replyInteractionSplit(interaction, formatHistory(count, scope), { ephemeral: true });
     }
   },
   async runText(message, args) {
@@ -112,25 +116,28 @@ export const systemprompt: Command = {
     const [subcommand, ...rest] = args;
 
     if (subcommand === "view") {
-      await message.reply(formatView(scope));
+      await replyMessageSplit(message, formatView(scope));
       return;
     }
 
     if (subcommand === "set") {
       const text = rest.join(" ").trim();
       if (!text) {
-        await message.reply("Usage: `$systemprompt set <text>`");
+        await replyMessageSplit(message, "Usage: `$systemprompt set <text>`");
         return;
       }
-      await message.reply(formatSet(text, message.author.id, message.author.tag, scope));
+      await replyMessageSplit(
+        message,
+        formatSet(text, message.author.id, message.author.tag, scope),
+      );
       return;
     }
 
     if (subcommand === "history") {
-      await message.reply(formatHistory(clampHistoryCount(rest[0]), scope));
+      await replyMessageSplit(message, formatHistory(clampHistoryCount(rest[0]), scope));
       return;
     }
 
-    await message.reply(TEXT_USAGE);
+    await replyMessageSplit(message, TEXT_USAGE);
   },
 };

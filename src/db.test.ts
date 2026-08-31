@@ -60,9 +60,14 @@ describe("system prompt scopes", () => {
 
 describe("deploy notice", () => {
   it("stores one notice and take removes it", () => {
-    setDeployNotice(db, "chan-1", "msg-1");
-    setDeployNotice(db, "chan-2", "msg-2");
-    assert.deepEqual(takeDeployNotice(db), { channel_id: "chan-2", message_id: "msg-2" });
+    setDeployNotice(db, "chan-1", ["msg-1"]);
+    setDeployNotice(db, "chan-2", ["msg-2"]);
+    assert.deepEqual(takeDeployNotice(db), { channel_id: "chan-2", message_ids: ["msg-2"] });
     assert.equal(takeDeployNotice(db), undefined);
+  });
+
+  it("stores every chained message id for later deletion", () => {
+    setDeployNotice(db, "chan-1", ["a", "b", "c"]);
+    assert.deepEqual(takeDeployNotice(db), { channel_id: "chan-1", message_ids: ["a", "b", "c"] });
   });
 });
