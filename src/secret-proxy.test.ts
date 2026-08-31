@@ -26,6 +26,7 @@ describe("containerGrokConfig", () => {
   it("restricts tool env and points inference at the host proxy", () => {
     const toml = containerGrokConfig("http://host.docker.internal:9");
     assert.match(toml, /include_only/);
+    assert.match(toml, /preferred_method = "api_key"/);
     assert.match(toml, /xai_api_base_url = "http:\/\/host\.docker\.internal:9\/v1"/);
     assert.doesNotMatch(toml, /xai-/);
     assert.doesNotMatch(toml, /gho_/);

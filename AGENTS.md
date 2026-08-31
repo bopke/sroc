@@ -110,6 +110,9 @@ Do not put `XAI_API_KEY`, `GH_TOKEN`, `GITHUB_TOKEN`, `DISCORD_TOKEN`, or
 `grok login` session (SuperGrok) and falls back to `XAI_API_KEY`. Git uses
 `url.*.insteadOf` to the proxy; `gh` is `scripts/container-gh.mjs` (no token).
 Dummy `XAI_API_KEY=sroc-local` only so the inner CLI will start.
+Container `config.toml` sets `auth.preferred_method = "api_key"` so `grok -p`
+does not demand a grok.com browser login; the host proxy still injects the
+SuperGrok session (or console key).
 Grok's `xai_api_base_url` / `GROK_XAI_API_BASE_URL` must be the proxy origin plus `/v1`
 (the CLI default is `https://api.x.ai/v1`; without it, grok hits `/models` and xAI 404s).
 Tool shells get `[shell_environment_policy] include_only`.
