@@ -37,7 +37,8 @@ export function openDatabase(path: string): DB {
     CREATE TABLE IF NOT EXISTS deploy_notice (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       channel_id TEXT NOT NULL,
-      message_id TEXT NOT NULL
+      message_id TEXT NOT NULL,
+      message_ids TEXT
     );
 
     CREATE TABLE IF NOT EXISTS valut_posts (
@@ -50,6 +51,7 @@ export function openDatabase(path: string): DB {
   ensureColumn(db, "messages", "grok_session_id", "TEXT");
   ensureColumn(db, "messages", "workspace_id", "TEXT");
   ensureColumn(db, "system_prompts", "scope", "TEXT NOT NULL DEFAULT 'guild'");
+  ensureColumn(db, "deploy_notice", "message_ids", "TEXT");
   return db;
 }
 
@@ -159,31 +161,52 @@ export function getMessage(db: DB, messageId: string): MessageRow | undefined {
 
 export interface DeployNotice {
   channel_id: string;
-  message_id: string;
+  message_ids: string[];
 }
 
-export function setDeployNotice(db: DB, channelId: string, messageId: string): void {
+export function setDeployNotice(db: DB, channelId: string, messageIds: string[]): void {
+  const ids = [...new Set(messageIds.filter(Boolean))];
+  if (ids.length === 0) return;
   db.prepare(
-    `INSERT INTO deploy_notice (id, channel_id, message_id) VALUES (1, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET channel_id = excluded.channel_id, message_id = excluded.message_id`,
-  ).run(channelId, messageId);
+    `INSERT INTO deploy_notice (id, channel_id, message_id, message_ids) VALUES (1, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       channel_id = excluded.channel_id,
+       message_id = excluded.message_id,
+       message_ids = excluded.message_ids`,
+  ).run(channelId, ids[0], JSON.stringify(ids));
+}
+
+function parseNoticeIds(messageId: string, messageIds: string | null | undefined): string[] {
+  if (messageIds) {
+    try {
+      const parsed = JSON.parse(messageIds) as unknown;
+      if (Array.isArray(parsed)) {
+        const ids = parsed.filter((id) => typeof id === "string" && id.length > 0);
+        if (ids.length > 0) return [...new Set(ids)];
+      }
+    } catch {
+      // fall through to legacy single id
+    }
+  }
+  return messageId ? [messageId] : [];
 }
 
 export function takeDeployNotice(db: DB): DeployNotice | undefined {
   return db.transaction(() => {
-    const row = db.prepare("SELECT channel_id, message_id FROM deploy_notice WHERE id = 1").get() as
-      | DeployNotice
-      | undefined;
+    const row = db
+      .prepare("SELECT channel_id, message_id, message_ids FROM deploy_notice WHERE id = 1")
+      .get() as { channel_id: string; message_id: string; message_ids: string | null } | undefined;
     if (!row) return undefined;
     db.prepare("DELETE FROM deploy_notice WHERE id = 1").run();
-    return row;
+    return {
+      channel_id: row.channel_id,
+      message_ids: parseNoticeIds(row.message_id, row.message_ids),
+    };
   })();
 }
 
 export function isAlreadyPostedToValut(db: DB, messageId: string): boolean {
-  const row = db
-    .prepare("SELECT 1 FROM valut_posts WHERE message_id = ?")
-    .get(messageId);
+  const row = db.prepare("SELECT 1 FROM valut_posts WHERE message_id = ?").get(messageId);
   return !!row;
 }
 

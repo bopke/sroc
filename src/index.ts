@@ -25,6 +25,7 @@ import {
   promptScope,
   takeDeployNotice,
 } from "./db.js";
+import { replyMessageSplit } from "./discordReply.js";
 import { GrokBuildClient, type GrokStreamEvent } from "./grok.js";
 import {
   buildSessionRules,
@@ -100,26 +101,10 @@ for (const command of commands) {
 }
 
 const COMMAND_PREFIX = "$";
-const DISCORD_MESSAGE_LIMIT = 2000;
 const TYPING_INTERVAL_MS = 8000;
 const STATUS_EDIT_INTERVAL_MS = 2000;
 const WORKING_DELAY_MS = 10_000;
 const DEPLOY_NOTICE_DELETE_MS = 10_000;
-
-function splitMessage(content: string, limit = DISCORD_MESSAGE_LIMIT): string[] {
-  if (content.length <= limit) return [content];
-
-  const chunks: string[] = [];
-  let remaining = content;
-  while (remaining.length > limit) {
-    let splitAt = remaining.lastIndexOf("\n", limit);
-    if (splitAt <= 0) splitAt = limit;
-    chunks.push(remaining.slice(0, splitAt));
-    remaining = remaining.slice(splitAt).replace(/^\n/, "");
-  }
-  if (remaining.length > 0) chunks.push(remaining);
-  return chunks;
-}
 
 function toolStatusText(event: GrokStreamEvent): string | null {
   if (event.type === "thought") return "-# Working...";
@@ -132,29 +117,12 @@ async function deliverReply(
   userMessage: Message,
   status: Message | null,
   replyText: string,
-): Promise<string> {
-  const chunks = splitMessage(replyText);
-  const channel = status?.channel ?? userMessage.channel;
-  if (!channel.isSendable()) {
-    throw new Error("Channel is not sendable");
-  }
-
-  // Remove the temporary "Working..." status message when we have the final result
+): Promise<{ messageId: string; content: string }[]> {
   if (status) {
     await status.delete().catch(() => undefined);
   }
-
-  let lastSentId: string | undefined;
-  for (let i = 0; i < chunks.length; i++) {
-    if (i === chunks.length - 1) {
-      const sent = await userMessage.reply(chunks[i]);
-      lastSentId = sent.id;
-    } else {
-      const sent = await channel.send(chunks[i]);
-      lastSentId = sent.id;
-    }
-  }
-  return lastSentId!;
+  const posted = await replyMessageSplit(userMessage, replyText);
+  return posted.map((item) => ({ messageId: item.messageId, content: item.content }));
 }
 
 function startWorkingStatus(userMessage: Message): {
@@ -213,8 +181,14 @@ async function deleteStoredDeployNotice(): Promise<void> {
   try {
     const channel = await client.channels.fetch(notice.channel_id);
     if (!channel || !channel.isTextBased() || !("messages" in channel)) return;
-    const posted = await channel.messages.fetch(notice.message_id);
-    await posted.delete();
+    for (const messageId of notice.message_ids) {
+      try {
+        const posted = await channel.messages.fetch(messageId);
+        await posted.delete();
+      } catch (error) {
+        console.error(`Failed to delete deploy notice ${messageId}:`, error);
+      }
+    }
   } catch (error) {
     console.error("Failed to delete deploy notice:", error);
   }
@@ -286,7 +260,9 @@ client.on(Events.MessageCreate, async (message) => {
         await command.runText(message, args);
       } catch (error) {
         console.error(`Error running text command ${token}:`, error);
-        await message.reply("There was an error executing this command.").catch(() => undefined);
+        await replyMessageSplit(message, "There was an error executing this command.").catch(
+          () => undefined,
+        );
       }
       return;
     }
@@ -359,20 +335,22 @@ client.on(Events.MessageCreate, async (message) => {
     });
 
     working.stop();
-    const lastSentId = await deliverReply(message, working.getStatus(), result.text);
+    const sent = await deliverReply(message, working.getStatus(), result.text);
 
-    insertMessage(db, {
-      message_id: lastSentId,
-      parent_message_id: message.id,
-      channel_id: message.channelId,
-      author_id: client.user.id,
-      role: "assistant",
-      content: result.text,
-      summary: null,
-      system_prompt_id: null,
-      grok_session_id: result.sessionId,
-      workspace_id: workspaceId,
-    });
+    for (const chunk of sent) {
+      insertMessage(db, {
+        message_id: chunk.messageId,
+        parent_message_id: message.id,
+        channel_id: message.channelId,
+        author_id: client.user.id,
+        role: "assistant",
+        content: chunk.content,
+        summary: null,
+        system_prompt_id: null,
+        grok_session_id: result.sessionId,
+        workspace_id: workspaceId,
+      });
+    }
   } catch (error) {
     console.error("Failed to handle chat message:", error);
     working.stop();
@@ -380,10 +358,8 @@ client.on(Events.MessageCreate, async (message) => {
     const status = working.getStatus();
     if (status) {
       await status.delete().catch(() => undefined);
-      await message.reply(apology).catch(() => undefined);
-    } else {
-      await message.reply(apology).catch(() => undefined);
     }
+    await replyMessageSplit(message, apology).catch(() => undefined);
   } finally {
     working.stop();
     clearInterval(typing);

@@ -95,9 +95,11 @@ systemd restarts the new `dist/`. A unit restart alone does not compile
 TypeScript (`dist/` is gitignored). Do not add `ExecStartPre` rebuilds; `/deploy`
 is the intended path. Deploy-commands is best-effort: a failure is reported but
 the process still restarts after a successful build. On success, persist the
-reply's `channel_id`/`message_id` in `deploy_notice` (singleton). After
-`ClientReady`, wait 10 seconds then fetch and delete that message and clear
-the row. Failed deploys do not store a notice.
+reply's `channel_id` and every chained `message_id` in `deploy_notice`. After
+`ClientReady`, wait 10 seconds then fetch and delete all of those messages and
+clear the row. Failed deploys do not store a notice. Outgoing Discord text is
+split on the nearest preceding newline at 2000 chars; later chunks reply to the
+previous chunk so they form a chain.
 
 systemd system units often omit `HOME`. Git then cannot read `~/.gitconfig` (the
 `gh` credential helper) and HTTPS pulls fail with "terminal prompts disabled".
@@ -125,7 +127,7 @@ Tool shells get `[shell_environment_policy] include_only`.
 - **`system_prompt_id` only on roots** (Discord-side audit). `grok_session_id` only on assistant rows. Anyone in the guild may change the guild system prompt; only the owner can change the DM prompt (because only they can DM).
 - **Failed Grok run:** log, send a short apology, **do not persist** the user or assistant node (retry-by-reply must land on the same valid parent). If a `-# Working...` status exists, delete it before replying; otherwise just reply.
 - **Working status:** do not post `-# Working...` until the turn has been running for 10 seconds. Fast replies have no status message. The status message (if posted) is deleted as soon as the final result arrives.
-- **Long replies:** split on the nearest preceding newline at 2000 chars. The final result is always sent as a fresh `message.reply(...)` (the temporary Working... message is deleted first). Later chunks are untracked channel messages. The last sent message id is the `assistant` row (the one a user must reply to in order to continue).
+- **Long replies:** split on the nearest preceding newline at 2000 chars via `src/discordReply.ts`. Delete `-# Working...` first, then reply to the user with chunk 1 and reply to each previous chunk after that. Persist **every** chunk as an `assistant` row with the same `grok_session_id` so a reply to any chunk continues the turn. Commands and `/deploy` use the same helper; deploy notices store all chunk ids for deletion.
 - **Stored user content** is `formatIncomingContent(...)` output (`Speaker (@username): body`), with the bot mention stripped. Attachments/embeds are text notes (name/url/title), not file bytes.
 - **Legacy rows** with a null `grok_session_id` start a fresh Grok session (still parented in the Discord tree).
 - **Isolate by default.** Each conversation root gets a Docker container

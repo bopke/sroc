@@ -6,12 +6,16 @@ import { promisify } from "node:util";
 import { SlashCommandBuilder } from "discord.js";
 import type { Command } from "../types.js";
 import { db, setDeployNotice } from "../db.js";
+import {
+  DISCORD_MESSAGE_LIMIT,
+  replyInteractionSplit,
+  replyMessageSplit,
+} from "../discordReply.js";
 
 const execFileAsync = promisify(execFile);
 const STEP_TIMEOUT_MS = 120_000;
 const RESTART_DELAY_MS = 1_000;
-const STEP_LOG_LIMIT = 400;
-export const DISCORD_REPLY_LIMIT = 2000;
+const STEP_LOG_LIMIT = DISCORD_MESSAGE_LIMIT;
 
 export function botRoot(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -21,10 +25,6 @@ export function clipLog(text: string, max = STEP_LOG_LIMIT): string {
   const trimmed = text.trim();
   if (trimmed.length <= max) return trimmed;
   return `…${trimmed.slice(-(max - 1))}`;
-}
-
-export function clipDiscordReply(text: string): string {
-  return clipLog(text, DISCORD_REPLY_LIMIT);
 }
 
 /** systemd system units often omit HOME, which hides ~/.gitconfig and gh auth. */
@@ -87,7 +87,7 @@ export function formatDeployReply(opts: {
     lines.push("", "**deploy-commands**", clipLog(opts.deployCmds ?? "") || "ok");
   }
   lines.push("", "Restarting.");
-  return clipDiscordReply(lines.join("\n"));
+  return lines.join("\n");
 }
 
 export async function pullAndBuild(): Promise<string> {
@@ -128,13 +128,16 @@ export const deploy: Command = {
       summary = await pullAndBuild();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await interaction.editReply(clipDiscordReply(`Deploy failed.\n${message}`));
+      await replyInteractionSplit(interaction, `Deploy failed.\n${message}`);
       return;
     }
     try {
-      await interaction.editReply(summary);
-      const reply = await interaction.fetchReply();
-      setDeployNotice(db, reply.channelId, reply.id);
+      const posted = await replyInteractionSplit(interaction, summary);
+      setDeployNotice(
+        db,
+        posted[0].channelId,
+        posted.map((item) => item.messageId),
+      );
     } catch (error) {
       console.error("deploy: could not post summary", error);
     }
@@ -147,12 +150,16 @@ export const deploy: Command = {
       summary = await pullAndBuild();
     } catch (error) {
       const errMessage = error instanceof Error ? error.message : String(error);
-      await status.edit(clipDiscordReply(`Deploy failed.\n${errMessage}`));
+      await replyMessageSplit(message, `Deploy failed.\n${errMessage}`, { existing: status });
       return;
     }
     try {
-      await status.edit(summary);
-      setDeployNotice(db, status.channelId, status.id);
+      const posted = await replyMessageSplit(message, summary, { existing: status });
+      setDeployNotice(
+        db,
+        posted[0].channelId,
+        posted.map((item) => item.messageId),
+      );
     } catch (error) {
       console.error("deploy: could not post summary", error);
     }
