@@ -12,7 +12,7 @@ export interface GrokBuildSettings {
   bin: string;
   model: string;
   cwd: string;
-  apiKey: string;
+  apiKey?: string;
   githubToken?: string;
   alwaysApprove: boolean;
   sandbox: string;
@@ -230,11 +230,11 @@ export class GrokBuildClient {
       GIT_COMMITTER_EMAIL: this.settings.isolateSettings.gitUserEmail,
     };
 
-    const hostEnv = {
+    const hostEnv: NodeJS.ProcessEnv = {
       ...process.env,
-      XAI_API_KEY: this.settings.apiKey,
       GROK_DISABLE_AUTOUPDATER: "1",
     };
+    if (this.settings.apiKey) hostEnv.XAI_API_KEY = this.settings.apiKey;
 
     const child = isolated
       ? spawn(

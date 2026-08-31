@@ -22,12 +22,8 @@ function boolEnv(name: string, defaultValue: boolean): boolean {
   return ["1", "true", "yes", "on"].includes(value.toLowerCase());
 }
 
-function requireGrokApiKey(): string {
-  const key = optionalEnv("XAI_API_KEY") ?? optionalEnv("GROK_API_KEY");
-  if (!key) {
-    throw new Error("Missing required environment variable: XAI_API_KEY (or GROK_API_KEY)");
-  }
-  return key;
+function optionalGrokApiKey(): string | undefined {
+  return optionalEnv("XAI_API_KEY") ?? optionalEnv("GROK_API_KEY");
 }
 
 function defaultWorkspace(): string {
@@ -42,7 +38,7 @@ export const config = {
   clientId: requireEnv("DISCORD_CLIENT_ID"),
   guildId: requireEnv("DISCORD_GUILD_ID"),
   ownerId: requireEnv("OWNER_ID"),
-  grokApiKey: requireGrokApiKey(),
+  grokApiKey: optionalGrokApiKey(),
   grokModel: process.env.GROK_MODEL ?? "grok-build",
   grokBin: process.env.GROK_BIN ?? "grok",
   grokCwd: optionalEnv("GROK_CWD") ?? defaultWorkspace(),

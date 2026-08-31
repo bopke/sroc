@@ -6,6 +6,8 @@ A Discord bot written in TypeScript using [discord.js](https://discord.js.org/),
 ## Setup
 
 1. Install the [Grok CLI](https://x.ai/cli/install.sh) and confirm `grok --version` works.
+   Sign in with **`grok login`** so the bot uses your SuperGrok subscription.
+   A console `XAI_API_KEY` is optional pay-per-token fallback if you are not logged in.
 2. Copy `.env.example` to `.env` and fill in your credentials:
 
    ```
@@ -13,7 +15,7 @@ A Discord bot written in TypeScript using [discord.js](https://discord.js.org/),
    DISCORD_CLIENT_ID=
    DISCORD_GUILD_ID=      # required — the single guild the bot operates in
    OWNER_ID=              # required — only this user can talk to the bot in DMs
-   XAI_API_KEY=           # from https://console.x.ai (GROK_API_KEY still accepted)
+   # XAI_API_KEY=         # optional; console.x.ai pay-per-token if not using grok login
    GROK_MODEL=grok-build  # optional; "default" uses the CLI's configured model
    ```
 

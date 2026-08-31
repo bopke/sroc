@@ -72,9 +72,14 @@ function forward(
 
 function listen(
   bindHost: string,
-  onRequest: (req: IncomingMessage, res: ServerResponse) => void,
+  onRequest: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>,
 ): Promise<SecretProxy> {
-  const server = createServer(onRequest);
+  const server = createServer((req, res) => {
+    void Promise.resolve(onRequest(req, res)).catch(() => {
+      if (!res.headersSent) res.writeHead(502);
+      res.end();
+    });
+  });
   return new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, bindHost, () => {
@@ -91,18 +96,25 @@ function listen(
   });
 }
 
-/** Reverse-proxy to api.x.ai that injects the real key. Bind to the docker bridge only. */
+/** Reverse-proxy to api.x.ai that injects the host credential. Bind to the docker bridge only. */
 export function startXaiProxy(opts: {
   bindHost: string;
-  bearerToken: string;
+  bearerToken?: string;
+  getBearer?: () => string | Promise<string>;
   targetOrigin?: string;
 }): Promise<SecretProxy> {
   const origin = opts.targetOrigin ?? "https://api.x.ai";
-  return listen(opts.bindHost, (req, res) => {
+  const resolveBearer = async (): Promise<string> => {
+    if (opts.getBearer) return await opts.getBearer();
+    if (opts.bearerToken) return opts.bearerToken;
+    throw new Error("xAI proxy has no bearer token");
+  };
+  return listen(opts.bindHost, async (req, res) => {
+    const token = await resolveBearer();
     const target = new URL(req.url ?? "/", origin);
     forward(req, res, target, {
       host: target.host,
-      authorization: `Bearer ${opts.bearerToken}`,
+      authorization: `Bearer ${token}`,
     });
   });
 }
