@@ -1,4 +1,10 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingHttpHeaders,
+  type IncomingMessage,
+  type RequestOptions,
+  type ServerResponse,
+} from "node:http";
 import { request as httpsRequest } from "node:https";
 import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -17,6 +23,13 @@ const HOP_BY_HOP = new Set([
 ]);
 
 const GITHUB_HOSTS = new Set(["github.com", "api.github.com"]);
+
+/** An upstream response kept aside while an anonymous retry is attempted. */
+interface HeldResponse {
+  status: number;
+  headers: IncomingHttpHeaders;
+  body: Buffer | null;
+}
 
 export function dockerBridgeAddress(): string {
   const nic = networkInterfaces().docker0;
@@ -70,17 +83,15 @@ function forward(
   req.pipe(upstream);
 }
 
+/** Largest request body we keep a copy of so the anonymous retry can replay it. */
+const MAX_REPLAY_BODY_BYTES = 8 * 1024 * 1024;
+/** Largest rejected response we keep so a failed retry can surface the original. */
+const MAX_HELD_RESPONSE_BYTES = 64 * 1024;
+
 /**
- * Like {@link forward}, but buffers the request body so it can retry.
- *
- * The GitHub proxy injects a `Basic` credential on every request. If that
- * credential is missing, expired, or lacks access, GitHub answers 401/403 even
- * for public repositories that would clone fine anonymously — and git, running
- * with `GIT_TERMINAL_PROMPT=0`, then dies with "could not read Username ...
- * terminal prompts disabled" instead of falling back to unauthenticated
- * access. To keep public clones working regardless of token health, retry the
- * request once without the injected Authorization header when the first,
- * authenticated attempt is rejected.
+ * Forwards like {@link forward}, but retries once without the injected GitHub
+ * credential when that credential is what GitHub rejected, so a stale token
+ * cannot break public clones.
  */
 function forwardWithAuthFallback(
   req: IncomingMessage,
@@ -89,49 +100,131 @@ function forwardWithAuthFallback(
   baseHeaders: Record<string, string>,
   authHeader: string | undefined,
 ): void {
-  const chunks: Buffer[] = [];
+  const transport = target.protocol === "http:" ? httpRequest : httpsRequest;
+  const replay: Buffer[] = [];
+  let replayBytes = 0;
+  // Past the cap we drop the copy instead of holding a whole push pack in host
+  // memory; the streamed attempt still completes, it just cannot be retried.
+  let replayable = true;
+  let requestEnded = false;
+  let afterRequestEnd: (() => void) | undefined;
+
+  req.on("data", (chunk: Buffer) => {
+    if (!replayable) return;
+    replayBytes += chunk.length;
+    if (replayBytes > MAX_REPLAY_BODY_BYTES) {
+      replay.length = 0;
+      replayable = false;
+      return;
+    }
+    replay.push(chunk);
+  });
+  req.on("end", () => {
+    requestEnded = true;
+    afterRequestEnd?.();
+  });
   req.on("error", () => {
+    replayable = false;
     if (!res.headersSent) res.writeHead(502);
     res.end();
   });
-  req.on("data", (chunk: Buffer) => chunks.push(chunk));
-  req.on("end", () => {
-    const body = Buffer.concat(chunks);
-    const transport = target.protocol === "http:" ? httpRequest : httpsRequest;
 
-    const attempt = (withAuth: boolean): void => {
-      const extraHeaders = { ...baseHeaders };
-      if (withAuth && authHeader) extraHeaders.authorization = authHeader;
-      else delete extraHeaders.authorization;
-      const upstream = transport(
-        {
-          protocol: target.protocol,
-          hostname: target.hostname,
-          port: target.port || (target.protocol === "http:" ? 80 : 443),
-          path: `${target.pathname}${target.search}`,
-          method: req.method,
-          headers: copyHeaders(req, extraHeaders),
-        },
-        (incoming) => {
-          const status = incoming.statusCode ?? 502;
-          if (withAuth && authHeader && (status === 401 || status === 403)) {
-            incoming.resume(); // drain so the socket can be reused
-            attempt(false);
-            return;
-          }
-          res.writeHead(status, incoming.headers);
-          incoming.pipe(res);
-        },
-      );
-      upstream.on("error", () => {
-        if (!res.headersSent) res.writeHead(502);
-        res.end();
-      });
-      upstream.end(body);
+  const options = (withAuth: boolean): RequestOptions => {
+    const headers = copyHeaders(req, {
+      ...baseHeaders,
+      ...(withAuth && authHeader ? { authorization: authHeader } : {}),
+    });
+    // The anonymous attempt has to be anonymous: copyHeaders would otherwise
+    // pass a client-sent Authorization straight through.
+    if (!withAuth) delete headers.authorization;
+    return {
+      protocol: target.protocol,
+      hostname: target.hostname,
+      port: target.port || (target.protocol === "http:" ? 80 : 443),
+      path: `${target.pathname}${target.search}`,
+      method: req.method,
+      headers,
     };
+  };
 
-    attempt(Boolean(authHeader));
+  // A 401 means the credential itself was refused, so dropping it can only
+  // help. A 403 is GitHub answering "not allowed" for a token that works —
+  // retrying a write would turn a clear permission error into a confusing
+  // anonymous 401, so only safe reads fall back on it.
+  const shouldRetry = (status: number): boolean =>
+    status === 401 || (status === 403 && req.method === "GET");
+
+  const relay = (incoming: IncomingMessage): void => {
+    res.writeHead(incoming.statusCode ?? 502, incoming.headers);
+    incoming.pipe(res);
+  };
+
+  const failGateway = (): void => {
+    if (!res.headersSent) res.writeHead(502);
+    res.end();
+  };
+
+  const sendHeld = (held: HeldResponse): void => {
+    if (res.headersSent) {
+      res.end();
+      return;
+    }
+    const headers = { ...held.headers };
+    delete headers["content-length"];
+    delete headers["transfer-encoding"];
+    res.writeHead(held.status, headers);
+    res.end(held.body ?? undefined);
+  };
+
+  const hold = (incoming: IncomingMessage, done: (held: HeldResponse) => void): void => {
+    const status = incoming.statusCode ?? 502;
+    const parts: Buffer[] = [];
+    let size = 0;
+    let kept = true;
+    incoming.on("data", (chunk: Buffer) => {
+      if (!kept) return;
+      size += chunk.length;
+      if (size > MAX_HELD_RESPONSE_BYTES) {
+        parts.length = 0;
+        kept = false;
+        return;
+      }
+      parts.push(chunk);
+    });
+    incoming.on("error", () => done({ status, headers: incoming.headers, body: null }));
+    incoming.on("end", () =>
+      done({ status, headers: incoming.headers, body: kept ? Buffer.concat(parts) : null }),
+    );
+  };
+
+  const retryAnonymously = (held: HeldResponse): void => {
+    const anonymous = transport(options(false), (incoming) => {
+      // The token was not the problem after all — keep the authenticated answer
+      // so permission errors stay permission errors.
+      if ((incoming.statusCode ?? 502) >= 400 && held.body) {
+        incoming.resume();
+        sendHeld(held);
+        return;
+      }
+      relay(incoming);
+    });
+    anonymous.on("error", () => (held.body ? sendHeld(held) : failGateway()));
+    anonymous.end(Buffer.concat(replay));
+  };
+
+  const authenticated = transport(options(true), (incoming) => {
+    if (!authHeader || !replayable || !shouldRetry(incoming.statusCode ?? 502)) {
+      relay(incoming);
+      return;
+    }
+    hold(incoming, (held) => {
+      // The retry replays the body, so it has to wait until we have all of it.
+      if (requestEnded) retryAnonymously(held);
+      else afterRequestEnd = () => retryAnonymously(held);
+    });
   });
+  authenticated.on("error", failGateway);
+  req.pipe(authenticated);
 }
 
 function listen(
