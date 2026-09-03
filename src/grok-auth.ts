@@ -20,7 +20,7 @@ export interface GrokAuth {
   getBearer(): Promise<string>;
 }
 
-const REFRESH_SKEW_MS = 120_000;
+const REFRESH_SKEW_MS = 600_000;
 const DEFAULT_TOKEN_URL = "https://auth.x.ai/oauth2/token";
 
 function tokenUrlFor(session: GrokSession, override?: string): string {
