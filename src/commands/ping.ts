@@ -11,6 +11,6 @@ export const ping: Command = {
   async runText(message) {
     const sent = await message.reply("Pinging...");
     const latency = sent.createdTimestamp - message.createdTimestamp;
-    await sent.edit(`Pong! Latency: ${latency}ms`);
+    await sent.edit(`Pong! Latency: ${latency}ms\n\njesteś nienormalny chłop taki pierdolniety`);
   },
 };
