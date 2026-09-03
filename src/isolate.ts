@@ -76,8 +76,12 @@ export function grokXaiApiBaseUrl(xaiProxyOrigin: string): string {
   return origin.endsWith("/v1") ? origin : `${origin}/v1`;
 }
 
-export function containerGrokConfig(xaiProxyUrl: string): string {
-  return [
+export function srocGhProxyValue(githubProxyUrl: string): string {
+  return `${githubProxyUrl.replace(/\/$/, "")}/https/api.github.com`;
+}
+
+export function containerGrokConfig(xaiProxyUrl: string, githubProxyUrl?: string): string {
+  const lines = [
     "[cli]",
     "auto_update = false",
     "",
@@ -91,8 +95,17 @@ export function containerGrokConfig(xaiProxyUrl: string): string {
     'inherit = "core"',
     "ignore_default_excludes = false",
     'include_only = ["PATH", "HOME", "USER", "LANG", "LC_ALL", "TERM", "TMPDIR", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "SROC_GH_PROXY"]',
-    "",
-  ].join("\n");
+  ];
+  // inherit=core drops docker-exec env before include_only; `set` injects after that.
+  if (githubProxyUrl) {
+    lines.push(
+      "",
+      "[shell_environment_policy.set]",
+      `SROC_GH_PROXY = ${JSON.stringify(srocGhProxyValue(githubProxyUrl))}`,
+    );
+  }
+  lines.push("");
+  return lines.join("\n");
 }
 
 export function dockerExecGrokArgs(
@@ -125,7 +138,7 @@ export function dockerExecGrokArgs(
     `HOME=${INNER_HOME}`,
   ];
   if (githubProxyUrl) {
-    args.push("-e", `SROC_GH_PROXY=${githubProxyUrl.replace(/\/$/, "")}/https/api.github.com`);
+    args.push("-e", `SROC_GH_PROXY=${srocGhProxyValue(githubProxyUrl)}`);
   }
   args.push(containerName, "grok", ...grokArgs);
   return args;
@@ -242,9 +255,14 @@ async function provision(containerName: string, settings: IsolateSettings): Prom
   await execWithStdin(
     containerName,
     ["sh", "-c", "mkdir -p /home/node/.grok && cat > /home/node/.grok/config.toml"],
-    containerGrokConfig(settings.xaiProxyUrl),
+    containerGrokConfig(settings.xaiProxyUrl, settings.githubProxyUrl),
   );
   if (settings.githubProxyUrl) {
+    await execWithStdin(
+      containerName,
+      ["sh", "-c", `cat > ${INNER_HOME}/.sroc-gh-proxy`],
+      `${srocGhProxyValue(settings.githubProxyUrl)}\n`,
+    );
     let listed = "";
     try {
       listed = (await execIn(containerName, ["git", "config", "--global", "--list"])).stdout;

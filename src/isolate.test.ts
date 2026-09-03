@@ -5,6 +5,7 @@ import {
   dockerExecGrokArgs,
   dockerRunArgs,
   gitConfigCommands,
+  srocGhProxyValue,
   workspaceContainerName,
   WORKSPACE_LABEL,
 } from "./isolate.js";
@@ -70,6 +71,15 @@ describe("dockerExecGrokArgs", () => {
     assert.ok(!joined.includes("DISCORD_TOKEN"));
     assert.ok(!joined.includes("xai-"));
     assert.ok(!joined.includes("gho_"));
+  });
+});
+
+describe("srocGhProxyValue", () => {
+  it("points gh at the path-prefixed api.github.com proxy", () => {
+    assert.equal(
+      srocGhProxyValue("http://host.docker.internal:8/"),
+      "http://host.docker.internal:8/https/api.github.com",
+    );
   });
 });
 

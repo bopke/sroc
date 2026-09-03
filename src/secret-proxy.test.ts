@@ -35,6 +35,18 @@ describe("containerGrokConfig", () => {
     assert.match(toml, /xai_api_base_url = "http:\/\/host\.docker\.internal:9\/v1"/);
     assert.doesNotMatch(toml, /xai-/);
     assert.doesNotMatch(toml, /gho_/);
+    assert.doesNotMatch(toml, /SROC_GH_PROXY =/);
+  });
+
+  it("injects SROC_GH_PROXY via policy.set so grok tool shells see it", () => {
+    const toml = containerGrokConfig(
+      "http://host.docker.internal:9",
+      "http://host.docker.internal:8",
+    );
+    assert.match(
+      toml,
+      /SROC_GH_PROXY = "http:\/\/host\.docker\.internal:8\/https\/api\.github.com"/,
+    );
   });
 });
 
@@ -77,6 +89,29 @@ describe("parseGithubProxyPath", () => {
     assert.equal(parseGithubProxyPath("/https/evil.example/secret"), null);
     assert.equal(parseGithubProxyPath("/v1/foo"), null);
   });
+
+  it("accepts bare GitHub API paths used by gh pr create against the proxy origin", () => {
+    assert.deepEqual(parseGithubProxyPath("/repos/bopke/sroc/pulls"), {
+      host: "api.github.com",
+      path: "/repos/bopke/sroc/pulls",
+    });
+    assert.deepEqual(parseGithubProxyPath("/user"), {
+      host: "api.github.com",
+      path: "/user",
+    });
+    assert.deepEqual(parseGithubProxyPath("/api/v3/user"), {
+      host: "api.github.com",
+      path: "/user",
+    });
+    assert.deepEqual(parseGithubProxyPath("http://api.github.com/user"), {
+      host: "api.github.com",
+      path: "/user",
+    });
+    assert.deepEqual(parseGithubProxyPath("/bopke/sroc.git/info/refs?service=git-upload-pack"), {
+      host: "github.com",
+      path: "/bopke/sroc.git/info/refs?service=git-upload-pack",
+    });
+  });
 });
 
 describe("startGithubProxy", () => {
@@ -105,6 +140,11 @@ describe("startGithubProxy", () => {
 
     const denied = await fetch(`${proxy.url}/https/evil.example/x`);
     assert.equal(denied.status, 403);
+
+    const viaBareApi = await fetch(`${proxy.url}/repos/bopke/sroc`);
+    const bareBody = (await viaBareApi.json()) as { auth: string; url: string };
+    assert.equal(viaBareApi.status, 200);
+    assert.equal(bareBody.url, "/repos/bopke/sroc");
 
     await proxy.close();
     await new Promise<void>((resolve, reject) =>

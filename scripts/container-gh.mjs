@@ -4,8 +4,20 @@
  * no token is present in this process environment.
  */
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
-const proxy = process.env.SROC_GH_PROXY;
+function resolveProxy() {
+  if (process.env.SROC_GH_PROXY) return process.env.SROC_GH_PROXY;
+  try {
+    return readFileSync(join(homedir(), ".sroc-gh-proxy"), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+const proxy = resolveProxy();
 if (!proxy) {
   console.error("SROC_GH_PROXY is not set; GitHub is not available in this container.");
   process.exit(1);

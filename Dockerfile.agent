@@ -17,7 +17,7 @@ RUN curl -fsSL https://x.ai/cli/install.sh | bash \
   && install -m 0755 /root/.grok/bin/grok /usr/local/bin/grok
 
 COPY scripts/container-gh.mjs /usr/local/bin/gh
-RUN chmod 0755 /usr/local/bin/gh
+RUN chmod 0755 /usr/local/bin/gh && ln -sfn /usr/local/bin/gh /usr/bin/gh
 
 # node:22 images already have uid 1000 as `node`.
 RUN mkdir -p /workspace && chown node:node /workspace
