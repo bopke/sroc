@@ -35,6 +35,7 @@ import {
 } from "./conversation.js";
 import { formatIncomingContent } from "./discordContext.js";
 import { createGrokAuth } from "./grok-auth.js";
+import { createGithubAuth } from "./github-auth.js";
 import { dockerBridgeAddress, startGithubProxy, startXaiProxy } from "./secret-proxy.js";
 
 const grokAuth = createGrokAuth({
@@ -48,13 +49,26 @@ if (!grokAuth.hasAny()) {
 }
 console.log(`Grok credential: ${grokAuth.label()}`);
 
+const githubAuth = createGithubAuth({ envToken: config.githubToken });
+if (githubAuth.hasAny()) {
+  try {
+    await githubAuth.getBearer();
+  } catch (error) {
+    console.warn("GitHub credential present but unusable:", error);
+  }
+}
+console.log(`GitHub credential: ${githubAuth.label()}`);
+
 const dockerGw = dockerBridgeAddress();
 const xaiProxy = await startXaiProxy({
   bindHost: dockerGw,
   getBearer: () => grokAuth.getBearer(),
 });
-const githubProxy = config.githubToken
-  ? await startGithubProxy({ bindHost: dockerGw, bearerToken: config.githubToken })
+const githubProxy = githubAuth.hasAny()
+  ? await startGithubProxy({
+      bindHost: dockerGw,
+      getBearer: () => githubAuth.getBearer(),
+    })
   : undefined;
 
 const client = new Client({
@@ -299,7 +313,7 @@ client.on(Events.MessageCreate, async (message) => {
     ? buildSessionRules(getCurrentSystemPrompt(db, scope)?.content ?? null, channelName, {
         dm: isDm,
         repoUrl: config.grokRepoUrl,
-        githubConfigured: Boolean(config.githubToken),
+        githubConfigured: githubAuth.hasAny(),
       })
     : null;
 

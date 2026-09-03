@@ -109,8 +109,11 @@ in `sroc.service` as well.
 Do not put `XAI_API_KEY`, `GH_TOKEN`, `GITHUB_TOKEN`, `DISCORD_TOKEN`, or
 `~/.grok/auth.json` in the container. xAI and GitHub HTTPS go through
 `src/secret-proxy.ts` on the docker bridge. The xAI proxy prefers the host
-`grok login` session (SuperGrok) and falls back to `XAI_API_KEY`. Git uses
-`url.*.insteadOf` to the proxy; `gh` is `scripts/container-gh.mjs` (no token).
+`grok login` session (SuperGrok) and falls back to `XAI_API_KEY`. The GitHub
+proxy prefers host `gh auth` (`gh auth token` with `GITHUB_TOKEN`/`GH_TOKEN`
+stripped so a stale env token cannot shadow `~/.config/gh/hosts.yml`) and
+falls back to `GITHUB_TOKEN`. Git uses `url.*.insteadOf` to the proxy; `gh`
+is `scripts/container-gh.mjs` (no token).
 Dummy `XAI_API_KEY=sroc-local` only so the inner CLI will start.
 Container `config.toml` sets `auth.preferred_method = "api_key"` so `grok -p`
 does not demand a grok.com browser login; the host proxy still injects the
@@ -139,8 +142,8 @@ Tool shells get `[shell_environment_policy] include_only`.
   simple chat fast. Tell Grok the repo URL in `--rules` so it can clone when
   the user asks for file/PR work. The bot now defaults to `GIT_USER_NAME=Bopke`
   - `GIT_USER_EMAIL=bot@bopke.dev` (your dedicated bot account). Provision git
-    identity and `url.*.insteadOf` when `GITHUB_TOKEN` is set, so `gh pr create`
-    works. Do not mount the host checkout, `.env`, or
+    identity and `url.*.insteadOf` when a GitHub credential is available (`gh auth`
+    on the host or `GITHUB_TOKEN`), so `gh pr create` works. Do not mount the host checkout, `.env`, or
     `data/`. Do not pass `DISCORD_TOKEN` into the container. Inner grok sandbox
     is `off`; Docker is the isolation. Default `--no-plan`, `--no-subagents`,
     `--effort low`. Copy `workspace_id` from the parent message; new roots use
