@@ -120,7 +120,11 @@ does not demand a grok.com browser login; the host proxy still injects the
 SuperGrok session (or console key).
 Grok's `xai_api_base_url` / `GROK_XAI_API_BASE_URL` must be the proxy origin plus `/v1`
 (the CLI default is `https://api.x.ai/v1`; without it, grok hits `/models` and xAI 404s).
-Tool shells get `[shell_environment_policy] include_only`.
+Tool shells get `[shell_environment_policy] include_only`. `inherit = "core"`
+drops docker-exec env before that filter, so `SROC_GH_PROXY` is injected with
+`[shell_environment_policy.set]` (and `$HOME/.sroc-gh-proxy` as a fallback the
+`gh` wrapper reads). The GitHub proxy also accepts bare `/repos/...` API paths
+so a `gh pr create` that hits the proxy origin does not get `host not allowed`.
 
 ## Invariants — do not break these
 

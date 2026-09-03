@@ -18,6 +18,10 @@ const HOP_BY_HOP = new Set([
 
 const GITHUB_HOSTS = new Set(["github.com", "api.github.com"]);
 
+/** REST roots official gh / curl hit when they treat the proxy as GitHub itself. */
+const GITHUB_API_ROOT =
+  /^\/(repos|user|users|orgs|graphql|rate_limit|search|gists|markdown|app|applications|meta|notifications|installation|organizations|teams|projects|issues|pulls|licenses|octocat|zen|emojis|gitignore|feeds)(\/|$)/;
+
 export function dockerBridgeAddress(): string {
   const nic = networkInterfaces().docker0;
   const ipv4 = nic?.find((entry) => entry.family === "IPv4" && !entry.internal);
@@ -126,11 +130,39 @@ export function parseGithubProxyPath(urlPath: string): { host: string; path: str
   } catch {
     return null;
   }
-  const match = parsed.pathname.match(/^\/https\/([^/]+)(\/.*)?$/);
-  if (!match) return null;
-  const host = match[1];
-  if (!GITHUB_HOSTS.has(host)) return null;
-  return { host, path: `${match[2] || "/"}${parsed.search}` };
+
+  if (/^https?:\/\//i.test(urlPath)) {
+    if (!GITHUB_HOSTS.has(parsed.hostname)) return null;
+    return { host: parsed.hostname, path: `${parsed.pathname}${parsed.search}` };
+  }
+
+  const prefixed = parsed.pathname.match(/^\/https\/([^/]+)(\/.*)?$/);
+  if (prefixed) {
+    const host = prefixed[1];
+    if (!GITHUB_HOSTS.has(host)) return null;
+    return { host, path: `${prefixed[2] || "/"}${parsed.search}` };
+  }
+
+  // Official `gh` with GH_HOST talks GitHub Enterprise: /api/v3/repos/...
+  if (parsed.pathname === "/api/v3" || parsed.pathname.startsWith("/api/v3/")) {
+    const rest = parsed.pathname.slice("/api/v3".length) || "/";
+    return { host: "api.github.com", path: `${rest}${parsed.search}` };
+  }
+
+  if (
+    /\.git(?:\/|$)/.test(parsed.pathname) ||
+    parsed.pathname.includes("/info/refs") ||
+    parsed.pathname.endsWith("/git-upload-pack") ||
+    parsed.pathname.endsWith("/git-receive-pack")
+  ) {
+    return { host: "github.com", path: `${parsed.pathname}${parsed.search}` };
+  }
+
+  if (GITHUB_API_ROOT.test(parsed.pathname)) {
+    return { host: "api.github.com", path: `${parsed.pathname}${parsed.search}` };
+  }
+
+  return null;
 }
 
 function githubBasicAuth(token: string): string {
