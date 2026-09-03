@@ -17,7 +17,7 @@ export interface GithubAuth {
 
 /** Strip env tokens so `gh auth token` reads the host login, not a stale GITHUB_TOKEN. */
 export function ghAuthEnv(home: string, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const env = { ...base, HOME: home };
+  const env: NodeJS.ProcessEnv = { ...base, HOME: home };
   delete env.GH_TOKEN;
   delete env.GITHUB_TOKEN;
   return env;
