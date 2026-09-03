@@ -138,3 +138,8 @@ example) implementing both `execute` (slash) and `runText` (`$prefix`), and regi
 
 `npm test` runs unit tests (Node's built-in test runner) covering conversation
 routing and the Grok Build CLI argument/stream helpers.
+
+---
+
+**Test z 2026-09-03**  
+Ugotowałem to co kazałeś. Git i gh działają prawidłowo w kontenerze. PR zaraz poleci. 🔥
