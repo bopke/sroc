@@ -133,14 +133,26 @@ export function parseGithubProxyPath(urlPath: string): { host: string; path: str
   return { host, path: `${match[2] || "/"}${parsed.search}` };
 }
 
+function githubBasicAuth(token: string): string {
+  return `Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`;
+}
+
 /** Path-prefixed proxy: /https/github.com/... and /https/api.github.com/... */
 export function startGithubProxy(opts: {
   bindHost: string;
-  bearerToken: string;
+  bearerToken?: string;
+  getBearer?: () => string | Promise<string>;
   testOrigins?: Record<string, string>;
 }): Promise<SecretProxy> {
-  const basic = Buffer.from(`x-access-token:${opts.bearerToken}`).toString("base64");
-  return listen(opts.bindHost, (req, res) => {
+  const resolveBearer = async (): Promise<string | undefined> => {
+    if (opts.getBearer) {
+      const token = await opts.getBearer();
+      return token || undefined;
+    }
+    if (opts.bearerToken) return opts.bearerToken;
+    return undefined;
+  };
+  return listen(opts.bindHost, async (req, res) => {
     const routed = parseGithubProxyPath(req.url ?? "/");
     if (!routed) {
       res.writeHead(403);
@@ -149,16 +161,48 @@ export function startGithubProxy(opts: {
     }
     const origin = opts.testOrigins?.[routed.host] ?? `https://${routed.host}`;
     const target = new URL(routed.path, origin);
-    forward(req, res, target, {
-      host: new URL(origin).host,
-      authorization: `Basic ${basic}`,
-    });
+    const extra: Record<string, string> = { host: new URL(origin).host };
+    const token = await resolveBearer();
+    if (token) extra.authorization = githubBasicAuth(token);
+    forward(req, res, target, extra);
   });
 }
 
-export function githubInsteadOfCommands(githubProxyUrl: string): string[][] {
+const PROXY_INSTEADOF_KEY =
+  /^url\.(http:\/\/host\.docker\.internal:\d+\/https\/(?:github\.com|api\.github\.com)\/)\.insteadof$/i;
+
+/** Sections from `git config --list` that rewrite GitHub through an old proxy port. */
+export function staleGithubInsteadOfSections(
+  existingConfigList: string,
+  githubProxyUrl: string,
+): string[] {
   const prefix = `${githubProxyUrl.replace(/\/$/, "")}/https`;
-  return [
+  const keep = new Set([`url.${prefix}/github.com/`, `url.${prefix}/api.github.com/`]);
+  const sections: string[] = [];
+  for (const line of existingConfigList.split("\n")) {
+    const eq = line.indexOf("=");
+    if (eq < 0) continue;
+    const match = line.slice(0, eq).match(PROXY_INSTEADOF_KEY);
+    if (!match) continue;
+    const section = `url.${match[1]}`;
+    if (!keep.has(section)) sections.push(section);
+  }
+  return sections;
+}
+
+export function githubInsteadOfCommands(
+  githubProxyUrl: string,
+  existingConfigList = "",
+): string[][] {
+  const prefix = `${githubProxyUrl.replace(/\/$/, "")}/https`;
+  const cmds = staleGithubInsteadOfSections(existingConfigList, githubProxyUrl).map((section) => [
+    "git",
+    "config",
+    "--global",
+    "--remove-section",
+    section,
+  ]);
+  cmds.push(
     ["git", "config", "--global", `url.${prefix}/github.com/.insteadOf`, "https://github.com/"],
     [
       "git",
@@ -167,5 +211,6 @@ export function githubInsteadOfCommands(githubProxyUrl: string): string[][] {
       `url.${prefix}/api.github.com/.insteadOf`,
       "https://api.github.com/",
     ],
-  ];
+  );
+  return cmds;
 }

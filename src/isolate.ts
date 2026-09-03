@@ -245,7 +245,13 @@ async function provision(containerName: string, settings: IsolateSettings): Prom
     containerGrokConfig(settings.xaiProxyUrl),
   );
   if (settings.githubProxyUrl) {
-    for (const cmd of githubInsteadOfCommands(settings.githubProxyUrl)) {
+    let listed = "";
+    try {
+      listed = (await execIn(containerName, ["git", "config", "--global", "--list"])).stdout;
+    } catch {
+      listed = "";
+    }
+    for (const cmd of githubInsteadOfCommands(settings.githubProxyUrl, listed)) {
       await execIn(containerName, cmd);
     }
   }

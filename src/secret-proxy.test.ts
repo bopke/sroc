@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, it } from "node:test";
-import { parseGithubProxyPath, startGithubProxy, startXaiProxy } from "./secret-proxy.js";
+import {
+  githubInsteadOfCommands,
+  parseGithubProxyPath,
+  startGithubProxy,
+  startXaiProxy,
+} from "./secret-proxy.js";
 import { CONTAINER_XAI_PLACEHOLDER, containerGrokConfig, grokXaiApiBaseUrl } from "./isolate.js";
 
 describe("grokXaiApiBaseUrl", () => {
@@ -104,6 +109,89 @@ describe("startGithubProxy", () => {
     await proxy.close();
     await new Promise<void>((resolve, reject) =>
       upstream.close((err) => (err ? reject(err) : resolve())),
+    );
+  });
+
+  it("resolves Authorization from getBearer on each request", async () => {
+    const seen: string[] = [];
+    const upstream = createServer((req, res) => {
+      seen.push(String(req.headers.authorization ?? ""));
+      res.end("ok");
+    });
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+    const origin = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`;
+
+    let n = 0;
+    const proxy = await startGithubProxy({
+      bindHost: "127.0.0.1",
+      getBearer: async () => `token-${++n}`,
+      testOrigins: { "api.github.com": origin, "github.com": origin },
+    });
+
+    await fetch(`${proxy.url}/https/api.github.com/user`);
+    await fetch(`${proxy.url}/https/api.github.com/user`);
+    assert.equal(seen.length, 2);
+    assert.equal(
+      Buffer.from(seen[0].replace("Basic ", ""), "base64").toString(),
+      "x-access-token:token-1",
+    );
+    assert.equal(
+      Buffer.from(seen[1].replace("Basic ", ""), "base64").toString(),
+      "x-access-token:token-2",
+    );
+
+    await proxy.close();
+    await new Promise<void>((resolve, reject) =>
+      upstream.close((err) => (err ? reject(err) : resolve())),
+    );
+  });
+});
+
+describe("githubInsteadOfCommands", () => {
+  it("rewrites github.com and api.github.com through the current proxy", () => {
+    const cmds = githubInsteadOfCommands("http://host.docker.internal:9");
+    assert.deepEqual(cmds, [
+      [
+        "git",
+        "config",
+        "--global",
+        "url.http://host.docker.internal:9/https/github.com/.insteadOf",
+        "https://github.com/",
+      ],
+      [
+        "git",
+        "config",
+        "--global",
+        "url.http://host.docker.internal:9/https/api.github.com/.insteadOf",
+        "https://api.github.com/",
+      ],
+    ]);
+  });
+
+  it("removes insteadOf keys that still point at a previous proxy port", () => {
+    const listed = [
+      "url.http://host.docker.internal:1111/https/github.com/.insteadof=https://github.com/",
+      "url.http://host.docker.internal:1111/https/api.github.com/.insteadof=https://api.github.com/",
+      "user.name=Bopke",
+    ].join("\n");
+    const cmds = githubInsteadOfCommands("http://host.docker.internal:2222", listed);
+    assert.deepEqual(cmds[0], [
+      "git",
+      "config",
+      "--global",
+      "--remove-section",
+      "url.http://host.docker.internal:1111/https/github.com/",
+    ]);
+    assert.deepEqual(cmds[1], [
+      "git",
+      "config",
+      "--global",
+      "--remove-section",
+      "url.http://host.docker.internal:1111/https/api.github.com/",
+    ]);
+    assert.equal(
+      cmds.at(-2)?.[3],
+      "url.http://host.docker.internal:2222/https/github.com/.insteadOf",
     );
   });
 });

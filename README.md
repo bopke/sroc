@@ -70,9 +70,12 @@ mounted. Throw a conversation away with `/isolate prune` (owner only).
 Build the image once: `npm run build-image`. Set `GROK_ISOLATE_CLONE=true`
 only if you want every new conversation to clone up front (slow).
 
-`GITHUB_TOKEN` stays on the host. The container reaches GitHub only through a
-docker-bridge proxy (git `insteadOf` + a tokenless `gh` wrapper), same idea as
-the xAI proxy. `env` / `cat ~/.config/gh` cannot print the real token.
+GitHub credentials stay on the host. Prefer `gh auth login` (the same session
+`gh` on the host uses). `GITHUB_TOKEN` / `GH_TOKEN` is a fallback when there
+is no host login. The container reaches GitHub only through a docker-bridge
+proxy (git `insteadOf` + a tokenless `gh` wrapper), same idea as the xAI
+proxy. `env` / `cat ~/.config/gh` inside the container cannot print the real
+token.
 
 To make commits appear under your GitHub account **as "Bopke"** (with the green "verified" badge),
 the bot now defaults to:
