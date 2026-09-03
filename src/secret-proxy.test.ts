@@ -106,4 +106,66 @@ describe("startGithubProxy", () => {
       upstream.close((err) => (err ? reject(err) : resolve())),
     );
   });
+
+  it("retries without auth when the injected credential is rejected", async () => {
+    let sawAuthAttempt = false;
+    let servedAnonymously = false;
+    const upstream = createServer((req, res) => {
+      if (req.headers.authorization) {
+        sawAuthAttempt = true;
+        res.writeHead(401);
+        res.end("bad credentials");
+        return;
+      }
+      servedAnonymously = true;
+      res.end(JSON.stringify({ ok: true, url: req.url }));
+    });
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+    const upPort = (upstream.address() as AddressInfo).port;
+    const origin = `http://127.0.0.1:${upPort}`;
+
+    const proxy = await startGithubProxy({
+      bindHost: "127.0.0.1",
+      bearerToken: "expired-token",
+      testOrigins: { "github.com": origin, "api.github.com": origin },
+    });
+
+    const response = await fetch(`${proxy.url}/https/github.com/octocat/Hello-World`);
+    const body = (await response.json()) as { ok: boolean };
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(sawAuthAttempt, true, "should try the credential first");
+    assert.equal(servedAnonymously, true, "should fall back to an anonymous request");
+
+    await proxy.close();
+    await new Promise<void>((resolve, reject) =>
+      upstream.close((err) => (err ? reject(err) : resolve())),
+    );
+  });
+
+  it("sends no Authorization header when there is no token", async () => {
+    let receivedAuth: string | undefined;
+    const upstream = createServer((req, res) => {
+      receivedAuth = req.headers.authorization;
+      res.end(JSON.stringify({ ok: true }));
+    });
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+    const upPort = (upstream.address() as AddressInfo).port;
+    const origin = `http://127.0.0.1:${upPort}`;
+
+    const proxy = await startGithubProxy({
+      bindHost: "127.0.0.1",
+      bearerToken: "",
+      testOrigins: { "github.com": origin, "api.github.com": origin },
+    });
+
+    const response = await fetch(`${proxy.url}/https/github.com/octocat/Hello-World`);
+    assert.equal(response.status, 200);
+    assert.equal(receivedAuth, undefined);
+
+    await proxy.close();
+    await new Promise<void>((resolve, reject) =>
+      upstream.close((err) => (err ? reject(err) : resolve())),
+    );
+  });
 });

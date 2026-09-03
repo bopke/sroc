@@ -70,6 +70,70 @@ function forward(
   req.pipe(upstream);
 }
 
+/**
+ * Like {@link forward}, but buffers the request body so it can retry.
+ *
+ * The GitHub proxy injects a `Basic` credential on every request. If that
+ * credential is missing, expired, or lacks access, GitHub answers 401/403 even
+ * for public repositories that would clone fine anonymously — and git, running
+ * with `GIT_TERMINAL_PROMPT=0`, then dies with "could not read Username ...
+ * terminal prompts disabled" instead of falling back to unauthenticated
+ * access. To keep public clones working regardless of token health, retry the
+ * request once without the injected Authorization header when the first,
+ * authenticated attempt is rejected.
+ */
+function forwardWithAuthFallback(
+  req: IncomingMessage,
+  res: ServerResponse,
+  target: URL,
+  baseHeaders: Record<string, string>,
+  authHeader: string | undefined,
+): void {
+  const chunks: Buffer[] = [];
+  req.on("error", () => {
+    if (!res.headersSent) res.writeHead(502);
+    res.end();
+  });
+  req.on("data", (chunk: Buffer) => chunks.push(chunk));
+  req.on("end", () => {
+    const body = Buffer.concat(chunks);
+    const transport = target.protocol === "http:" ? httpRequest : httpsRequest;
+
+    const attempt = (withAuth: boolean): void => {
+      const extraHeaders = { ...baseHeaders };
+      if (withAuth && authHeader) extraHeaders.authorization = authHeader;
+      else delete extraHeaders.authorization;
+      const upstream = transport(
+        {
+          protocol: target.protocol,
+          hostname: target.hostname,
+          port: target.port || (target.protocol === "http:" ? 80 : 443),
+          path: `${target.pathname}${target.search}`,
+          method: req.method,
+          headers: copyHeaders(req, extraHeaders),
+        },
+        (incoming) => {
+          const status = incoming.statusCode ?? 502;
+          if (withAuth && authHeader && (status === 401 || status === 403)) {
+            incoming.resume(); // drain so the socket can be reused
+            attempt(false);
+            return;
+          }
+          res.writeHead(status, incoming.headers);
+          incoming.pipe(res);
+        },
+      );
+      upstream.on("error", () => {
+        if (!res.headersSent) res.writeHead(502);
+        res.end();
+      });
+      upstream.end(body);
+    };
+
+    attempt(Boolean(authHeader));
+  });
+}
+
 function listen(
   bindHost: string,
   onRequest: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>,
@@ -139,7 +203,11 @@ export function startGithubProxy(opts: {
   bearerToken: string;
   testOrigins?: Record<string, string>;
 }): Promise<SecretProxy> {
-  const basic = Buffer.from(`x-access-token:${opts.bearerToken}`).toString("base64");
+  // Only build a credential when we actually have a token; an empty token would
+  // otherwise turn every request into a guaranteed 401.
+  const authHeader = opts.bearerToken
+    ? `Basic ${Buffer.from(`x-access-token:${opts.bearerToken}`).toString("base64")}`
+    : undefined;
   return listen(opts.bindHost, (req, res) => {
     const routed = parseGithubProxyPath(req.url ?? "/");
     if (!routed) {
@@ -149,10 +217,7 @@ export function startGithubProxy(opts: {
     }
     const origin = opts.testOrigins?.[routed.host] ?? `https://${routed.host}`;
     const target = new URL(routed.path, origin);
-    forward(req, res, target, {
-      host: new URL(origin).host,
-      authorization: `Basic ${basic}`,
-    });
+    forwardWithAuthFallback(req, res, target, { host: new URL(origin).host }, authHeader);
   });
 }
 
